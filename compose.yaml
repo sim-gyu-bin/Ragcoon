@@ -7,6 +7,12 @@ services:
       CHROMA_PATH: /data/chroma
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANONYMIZED_TELEMETRY: "False"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     volumes:
       - documents:/data
   caddy:
@@ -16,7 +22,8 @@ services:
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   documents:

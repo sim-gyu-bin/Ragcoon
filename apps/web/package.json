@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
     "check": "biome check --error-on-warnings .",
     "format": "biome format --write .",
     "hooks:install": "cd ../.. && apps/web/node_modules/.bin/husky"
@@ -19,6 +20,7 @@
     "@types/react-dom": "^19.2.0",
     "husky": "^9.1.7",
     "typescript": "~5.9.3",
-    "vite": "^7.3.0"
+    "vite": "^7.3.0",
+    "vitest": "^3.2.7"
   }
 }

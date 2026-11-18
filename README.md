@@ -25,6 +25,18 @@ Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compo
 - **실패 실습:** `docker compose stop api` 후 새로고침한다. Caddy가 정적 화면은 계속 제공하지만 ‘연결 실패’로 바뀐다. `docker compose start api` 후 다시 새로고침하면 복구된다.
 - **읽는 순서:** [React 요청](apps/web/src/main.tsx) → [Caddy 경로 분기](infra/Caddyfile) → [FastAPI 응답](apps/api/app/main.py). 실습을 마치면 `docker compose stop`으로 중지한다.
 
+### 로컬 인수 검사
+
+저장소 루트에서 실행한다. 테스트 컨테이너는 서비스 볼륨을 연결하지 않고, 모델 키나 외부망 없이 합성 데이터만 사용한다. 이미지 빌드와 패키지 설치에는 네트워크가 필요하다.
+
+```sh
+docker build --target test -t ragcoon-api-test apps/api
+docker run --rm --network none ragcoon-api-test
+(cd apps/web && corepack pnpm install --frozen-lockfile && corepack pnpm test && corepack pnpm check && corepack pnpm build)
+```
+
+브라우저 인수 기준은 **검색된 청크 → 답변의 인용 원문 → 컨테이너 교체 후 같은 세션·출처**가 이어지는지다. 이 검사는 실제 OpenAI 임베딩의 검색 품질을 보장하지 않는다. 검증 결과와 보류 항목은 [작업 플랜 L07](docs/work-plan.md)에 기록한다.
+
 ### Markdown 등록 실습
 
 1. 빈 줄로 문단을 구분한 한국어 `.md` 또는 `.markdown` 파일을 선택해 등록한다. UTF-8 텍스트만 허용하며 파일당 최대 1 MiB(1,048,576바이트)다.
