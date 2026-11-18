@@ -6,7 +6,7 @@ RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent
 
 Markdown·텍스트 PDF를 등록하고, 검색된 문단을 바탕으로 답변을 받아 인용 원문까지 확인할 수 있다. 같은 질문으로 기본 RAG와 한 번 더 검색할 수 있는 Agent의 결과도 비교한다.
 
-**현재 상태:** 로컬에서 문서 등록부터 채팅 기록 복원까지 검증하고 실제 모델로 [한국어 합성 질문 10개를 평가](docs/wiki/evaluation.md#실제-모델-평가-결과)했다. OCI ARM64 VM에서도 비공개로 기동해 검색을 확인했다. 아직 인터넷에 공개하지 않았다.
+**현재 상태:** 로컬에서 문서 등록부터 채팅 기록 복원까지 검증하고 실제 모델로 [한국어 합성 질문 10개를 평가](docs/wiki/evaluation.md#실제-모델-평가-결과)했다. OCI에서는 비공개 검색과 단회 공개 HTTPS 시험을 마쳤으며 상시 공개하지 않는다.
 
 ## 개발 사양
 
@@ -19,7 +19,7 @@ Markdown·텍스트 PDF를 등록하고, 검색된 문단을 바탕으로 답변
 | RAG·Agent | LangChain, LangGraph | 모델 연동, 근거 판정과 조건부 재검색 |
 | 평가·관측 | 한국어 합성 평가셋, LangSmith | 기본 RAG와 Agent 비교. 원격 추적은 선택 사항이며 미검증 |
 | 개발·테스트 | Pytest, Vitest, Biome, Husky | 백엔드·프론트 검사, 포맷·린트와 커밋 전 검사 |
-| 실행·배포 | Docker Compose, Caddy | 로컬 컨테이너 실행, 정적 파일 제공과 API 리버스 프록시. OCI·GitHub Actions 배포는 계획 단계 |
+| 실행·배포 | Docker Compose, Caddy, GitHub Actions | 로컬 컨테이너 실행, 정적 파일 제공과 API 리버스 프록시, OCI ARM64 단회 배포 |
 
 ## 아키텍처
 
@@ -51,7 +51,7 @@ docs/                 PRD, 작업 플랜, 학습 위키
 
 1. **로컬 기반·문서 검색·채팅:** Markdown/PDF 등록부터 세 검색 방식, 인용 답변, 대화 복원까지 구현하고 로컬에서 검증했다.
 2. **Agent·평가:** 기본 RAG와 조건부 재검색 Agent를 오프라인 대역 및 실제 OpenAI 모델로 비교했다. LangSmith 원격 추적은 아직 검증하지 않았다.
-3. **배포·운영:** OCI 오사카 Ampere A1(ARM64, 2 OCPU, 메모리 12GB, Ubuntu 24.04)에서 비공개로 실행 중이다. 공개 HTTPS, GitHub Actions 배포와 백업·복구는 향후 작업이다. 향후 무료 적용은 확정되지 않았으며 외부 모델 비용은 별도다.
+3. **배포·운영:** OCI 오사카 Ampere A1(ARM64, 2 OCPU, 메모리 12GB, Ubuntu 24.04)에서 비공개 기동과 공개 HTTPS 시험 후 철수를 검증했다. VM의 RAGcoon은 현재 중지 상태이며, 개인 스터디 데이터의 백업·복원 훈련은 범위에서 제외한다. 외부 모델 비용은 별도다.
 
 ## 빠른 시작
 
@@ -67,6 +67,7 @@ docker compose up -d --build
 
 ## 더 읽기
 
+- [화면·API 테스트 가이드](docs/testing-guide.md): 로컬에서 예제 문서를 등록하고 검색·인용·채팅 기록까지 확인하는 순서
 - [학습 위키 — L01~L07](docs/wiki/README.md): 화면의 요청부터 검색·인용·평가까지, 설계 이유와 직접 확인하는 방법
 - [제품 요구사항](docs/prd.md): 기능 범위와 인수 기준
 - [작업 플랜](docs/work-plan.md): 단계별 검증 결과, 미확인 항목과 OCI 배포 계획
