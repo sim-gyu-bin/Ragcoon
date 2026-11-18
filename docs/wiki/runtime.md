@@ -39,6 +39,8 @@ Telegram은 **배포 결과의 통보 수단**이지 성공의 판정자가 아�
 
 **사설 배포와 공개 검증은 경로가 다르다.** GitHub Actions는 승인한 `main` 실행에 한해 OIDC로 `tag:ragcoon-ci`를 발급받고, Tailscale을 통해 VM의 SSH에 접속한다. Actions는 고정한 SSH 호스트 키로 VM을 확인하고, VM은 전용 배포 키·승인 SHA·이미지 digest를 확인한다. 반면 외부 시험은 Tailscale이 아니라 공인 DNS와 HTTPS를 사용한다. 이 창에서는 요청 본문 64KB, 격리 DB 16MiB, 유료 모델 호출 0으로 제한하며 **사용자별 초당 요청 수 제한은 구현하지 않았다.** 상시 공개로 바꿀 때는 별도로 정해야 한다.
 
+**공개 배포 로그:** `DEPLOY_HOST`, `TS_OIDC_CLIENT_ID`, `TS_OIDC_AUDIENCE`는 저장소의 Actions **Secrets**에 둔다. 이 값들은 단독으로 접속 권한을 주지는 않지만, Variables에 두면 워크플로가 직접 출력하지 않아도 단계의 환경 변수나 액션 입력에 평문으로 나타날 수 있다. 마스킹은 값의 변형까지 보장하지 않으므로 진단용으로 출력하지 않는다.
+
 ## DB가 두 개인데 볼륨은 왜 하나일까?
 
 [Compose 설정](../../compose.yaml)의 `documents:/data`는 이름 있는 볼륨 하나를 API 컨테이너의 `/data`에 연결한다. SQLite는 `/data/ragcoon.sqlite3` 파일에 원문·청크·희소 검색 색인·채팅 기록을 보관하고, ChromaDB는 `/data/chroma/` 디렉터리에 청크 ID에 대응하는 벡터와 메타데이터를 보관한다. DB의 역할과 저장 경로는 다르지만 컨테이너 교체 후에도 보존해야 한다는 조건이 같아 볼륨을 공유한다.
