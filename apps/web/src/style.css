@@ -166,6 +166,11 @@ button:disabled {
   border-radius: 0.5rem;
   padding: 0.65rem 1rem;
 }
+.chat-messages li {
+  border-left: 3px solid #8aa193;
+  margin-top: 0.65rem;
+  padding: 0.45rem 0.75rem;
+}
 .chunks li + li {
   margin-top: 0.4rem;
 }
@@ -183,4 +188,35 @@ pre {
 }
 .connection strong {
   display: block;
+}
+.chat-sessions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.chat-conversation {
+  border-top: 1px solid #d6dfd8;
+  padding-top: 0.75rem;
+}
+.chat-conversation > * + * {
+  margin-top: 0.65rem;
+}
+.chat-messages {
+  list-style: none;
+  padding: 0;
+}
+.chat-text {
+  white-space: pre-wrap;
+}
+.chat-text a {
+  color: #215c40;
+  font-weight: 700;
+}
+.chat-source {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: #f3f6f2;
+  border-radius: 0.5rem;
+  overflow-wrap: anywhere;
 }

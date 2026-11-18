@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Chat } from './Chat';
 import { Documents } from './Documents';
 import { Search } from './Search';
 import './style.css';
@@ -46,6 +47,7 @@ createRoot(root).render(
     </header>
     <Documents />
     <Search />
+    <Chat />
     <ConnectionStatus />
   </>,
 );

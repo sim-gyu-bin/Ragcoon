@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, StringConstraints
 
 from .documents import connection
+from .vectors import VectorStore
 
 router = APIRouter(prefix="/api")
 Mode = Literal["sparse", "dense", "hybrid"]
@@ -76,19 +77,23 @@ def read_results(db: sqlite3.Connection, ranked_ids: list[int]) -> list[SearchRe
     return [SearchResult(**by_id[chunk_id]) for chunk_id in ids if chunk_id in by_id][:TOP_K]
 
 
-@router.post("/search")
-def search(request: Request, body: SearchRequest) -> SearchResponse:
-    path = request.app.state.db_path
+def retrieve(path: str, store: VectorStore, body: SearchRequest) -> list[SearchResult]:
     with connection(path) as db:
         # 하이브리드의 두 후보군은 같은 시점의 준비 문서를 사용한다. 네트워크 대기 중에는 락을 풀어 둔다.
         db.execute("BEGIN")
         sparse = sparse_ids(db, body.query) if body.mode != "dense" else []
         if body.mode == "sparse":
-            return SearchResponse(mode="sparse", results=read_results(db, sparse))
+            return read_results(db, sparse)
         ready = [row[0] for row in db.execute("SELECT id FROM documents WHERE status = 'ready' ORDER BY id")]
     if not ready:
-        return SearchResponse(mode=body.mode, results=[])
-    dense = request.app.state.vector_store.search(body.query, ready, TOP_K)
+        return []
+    dense = store.search(body.query, ready, TOP_K)
     ranked = dense if body.mode == "dense" else reciprocal_rank_fusion(sparse, dense)
     with connection(path) as db:
-        return SearchResponse(mode=body.mode, results=read_results(db, ranked))
+        return read_results(db, ranked)
+
+
+@router.post("/search")
+def search(request: Request, body: SearchRequest) -> SearchResponse:
+    results = retrieve(request.app.state.db_path, request.app.state.vector_store, body)
+    return SearchResponse(mode=body.mode, results=results)

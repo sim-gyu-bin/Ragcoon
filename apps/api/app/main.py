@@ -1,13 +1,14 @@
 import os
 import sqlite3
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import documents, search
+from . import chat, documents, search
+from .chat_model import GroundedChat
 from .vectors import VectorError, VectorStore
 
 
@@ -15,19 +16,21 @@ from .vectors import VectorError, VectorStore
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_path = os.environ.get("RAGCOON_DB", "ragcoon.sqlite3")
     documents.initialize(app.state.db_path)
-    if hasattr(app.state, "vector_store"):
+    chat.initialize(app.state.db_path)
+    with ExitStack() as owned:
+        if not hasattr(app.state, "vector_store"):
+            app.state.vector_store = VectorStore()
+            owned.callback(delattr, app.state, "vector_store")
+        if not hasattr(app.state, "chat_model"):
+            app.state.chat_model = GroundedChat()
+            owned.callback(delattr, app.state, "chat_model")
         yield
-    else:
-        app.state.vector_store = VectorStore()
-        try:
-            yield
-        finally:
-            del app.state.vector_store
 
 
 app = FastAPI(title="RAGcoon API", lifespan=lifespan)
 app.include_router(documents.router)
 app.include_router(search.router)
+app.include_router(chat.router)
 
 
 @app.exception_handler(RequestValidationError)
