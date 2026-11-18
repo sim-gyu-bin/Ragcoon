@@ -5,21 +5,29 @@ import {
   useRef,
   useState,
 } from 'react';
+import { sourceLocation } from './sourceLocation';
 
 type DocumentEntry = {
   id: number;
   filename: string;
-  status: 'registered' | 'indexing' | 'failed' | 'ready';
+  status: 'registered' | 'indexing' | 'failed' | 'ready' | 'delete_pending';
   chunk_count: number;
 };
 
-type Chunk = { id: number; start_line: number; end_line: number; text: string };
+type Chunk = {
+  id: number;
+  page_number: number | null;
+  start_line: number;
+  end_line: number;
+  text: string;
+};
 
 const statusLabels: Record<DocumentEntry['status'], string> = {
   registered: '등록됨 · 색인 전',
   indexing: '색인 중',
   failed: '색인 실패 · 검색 불가',
   ready: '색인 완료 · 검색 가능',
+  delete_pending: '삭제 미완료 · 재시도 필요',
 };
 
 function Chunks({ documentId }: { documentId: number }) {
@@ -69,7 +77,7 @@ function Chunks({ documentId }: { documentId: number }) {
         <li key={chunk.id}>
           <details>
             <summary>
-              청크 #{chunk.id} · {chunk.start_line}–{chunk.end_line}줄 · 원문
+              청크 #{chunk.id} · {sourceLocation(chunk)} · 원문
             </summary>
             <pre>{chunk.text}</pre>
           </details>
@@ -82,20 +90,30 @@ function Chunks({ documentId }: { documentId: number }) {
 function DocumentRow({
   entry,
   onIndexed,
+  onDeleted,
   reload,
 }: {
   entry: DocumentEntry;
   onIndexed: (id: number) => void;
+  onDeleted: (entry: DocumentEntry) => void;
   reload: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexError, setIndexError] = useState('');
+  const [confirmation, setConfirmation] = useState<
+    'closed' | 'open' | 'deleting'
+  >('closed');
+  const [deleteError, setDeleteError] = useState('');
   const status =
     indexing && entry.status !== 'ready' ? 'indexing' : entry.status;
 
   async function indexDocument() {
-    if (status !== 'registered' && status !== 'failed') return;
+    if (
+      confirmation !== 'closed' ||
+      (status !== 'registered' && status !== 'failed')
+    )
+      return;
     setIndexing(true);
     setIndexError('');
     try {
@@ -121,6 +139,34 @@ function DocumentRow({
     }
   }
 
+  async function deleteDocument() {
+    if (confirmation !== 'open' || status === 'indexing') return;
+    setConfirmation('deleting');
+    setDeleteError('');
+    try {
+      const response = await fetch(`/api/documents/${entry.id}`, {
+        method: 'DELETE',
+      });
+      if (response.status === 204) {
+        onDeleted(entry);
+      } else {
+        setDeleteError(
+          response.status === 409
+            ? '색인 중에는 삭제할 수 없습니다. 색인이 끝난 뒤 다시 시도해 주세요.'
+            : `삭제를 완료하지 못했습니다. 목록의 상태를 확인하고 다시 시도해 주세요. (HTTP ${response.status})`,
+        );
+      }
+    } catch {
+      setDeleteError(
+        '삭제 결과를 확인하지 못했습니다. 연결과 목록의 상태를 확인한 뒤 다시 시도해 주세요.',
+      );
+    } finally {
+      // 양쪽 색인 중 하나만 정리됐을 수도 있으므로 오류일 때도 서버 상태를 다시 읽는다.
+      await reload();
+      setConfirmation('closed');
+    }
+  }
+
   return (
     <li className="document-row">
       <div className="row-heading">
@@ -137,6 +183,7 @@ function DocumentRow({
           <button
             type="button"
             aria-describedby="index-hint"
+            disabled={confirmation !== 'closed'}
             onClick={() => void indexDocument()}
           >
             {status === 'failed' || indexError ? '색인 다시 시도' : '색인 시작'}
@@ -149,7 +196,55 @@ function DocumentRow({
         >
           {open ? '구간 접기' : '구간 펼쳐보기'}
         </button>
+        {confirmation === 'closed' && (
+          <button
+            type="button"
+            disabled={status === 'indexing'}
+            onClick={() => {
+              setDeleteError('');
+              setConfirmation('open');
+            }}
+          >
+            {status === 'delete_pending' ? '삭제 재시도' : '문서 삭제'}
+          </button>
+        )}
       </div>
+      {confirmation !== 'closed' && (
+        <fieldset className="delete-confirmation">
+          <legend>
+            {entry.filename} (문서 #{entry.id}) 삭제 확인
+          </legend>
+          <p>
+            저장된 원문과 구간, 문서 정보, 희소(BM25)·밀집(벡터) 색인을
+            삭제합니다. 삭제한 문서는 새 검색이나 답변에 쓰이지 않으며 되돌릴 수
+            없습니다.
+          </p>
+          <p>
+            과거 대화와 답변은 삭제되지 않습니다. 당시 저장한 출처의 파일명,
+            위치와 인용 원문도 그대로 남습니다.
+          </p>
+          <div className="document-actions">
+            <button
+              type="button"
+              disabled={confirmation === 'deleting'}
+              onClick={() => setConfirmation('closed')}
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              className="danger"
+              disabled={confirmation === 'deleting' || status === 'indexing'}
+              onClick={() => void deleteDocument()}
+            >
+              {confirmation === 'deleting'
+                ? '삭제 중…'
+                : '이 문서 영구 삭제 승인'}
+            </button>
+          </div>
+        </fieldset>
+      )}
+      {deleteError && <p role="alert">{deleteError}</p>}
       {indexError && status !== 'ready' && <p role="alert">{indexError}</p>}
       {open && <Chunks documentId={entry.id} />}
     </li>
@@ -164,6 +259,7 @@ export function Documents() {
   const [entries, setEntries] = useState<DocumentEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
+  const [deleteNotice, setDeleteNotice] = useState('');
   const listRequest = useRef<AbortController | null>(null);
 
   const reload = useCallback(async () => {
@@ -208,14 +304,30 @@ export function Documents() {
     );
   }
 
+  function markDeleted(entry: DocumentEntry) {
+    setEntries(
+      (previous) => previous?.filter((row) => row.id !== entry.id) ?? null,
+    );
+    setDeleteNotice(`${entry.filename} (문서 #${entry.id})을 삭제했습니다.`);
+  }
+
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file || uploading) return;
     const form = event.currentTarget;
     setUploadError('');
     setNotice('');
-    if (!/\.(md|markdown)$/i.test(file.name) || file.size > 1024 * 1024) {
-      setUploadError('1 MiB 이하의 .md 또는 .markdown 파일을 선택해 주세요.');
+    const isPdf = /\.pdf$/i.test(file.name);
+    if (!isPdf && !/\.(md|markdown)$/i.test(file.name)) {
+      setUploadError('.md, .markdown 또는 .pdf 파일을 선택해 주세요.');
+      return;
+    }
+    if (file.size > (isPdf ? 5 : 1) * 1024 * 1024) {
+      setUploadError(
+        isPdf
+          ? 'PDF 파일은 5 MiB 이하여야 합니다.'
+          : 'Markdown 파일은 1 MiB 이하여야 합니다.',
+      );
       return;
     }
     setUploading(true);
@@ -224,11 +336,21 @@ export function Documents() {
       const query = new URLSearchParams({ filename: file.name });
       const response = await fetch(`/api/documents?${query}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+        headers: {
+          'Content-Type': isPdf
+            ? 'application/pdf'
+            : 'text/markdown; charset=utf-8',
+        },
         body: file,
       });
       if (!response.ok) {
-        setUploadError(`문서를 등록하지 못했습니다. (HTTP ${response.status})`);
+        // 페이지 수와 텍스트 추출 가능 여부는 파일을 읽은 서버가 판별한다.
+        const error = await response.json().catch(() => null);
+        setUploadError(
+          typeof error?.detail === 'string'
+            ? error.detail
+            : `문서를 등록하지 못했습니다. (HTTP ${response.status})`,
+        );
         return;
       }
       const entry: DocumentEntry = await response.json();
@@ -237,7 +359,7 @@ export function Documents() {
         ...(previous ?? []).filter((row) => row.id !== entry.id),
       ]);
       setNotice(
-        `${entry.filename} 파일을 문서 #${entry.id}(으)로 등록했습니다.`,
+        `${entry.filename} 파일을 문서 #${entry.id}(으)로 등록했습니다. 검색하려면 목록에서 색인을 시작하세요.`,
       );
       form.reset();
       setFile(null);
@@ -254,13 +376,18 @@ export function Documents() {
       <section aria-labelledby="upload-heading">
         <h2 id="upload-heading">문서 등록</h2>
         <form onSubmit={register}>
-          <label htmlFor="markdown-file">마크다운 파일</label>
-          <p id="file-hint">UTF-8 · .md 또는 .markdown · 최대 1 MiB</p>
+          <label htmlFor="document-file">Markdown 또는 PDF 파일</label>
+          <p id="file-hint">
+            Markdown: UTF-8 .md 또는 .markdown, 최대 1 MiB. PDF: .pdf, 최대 5
+            MiB·100페이지. PDF는 파일 자체를 보관하지 않고 추출한 텍스트와 문서
+            정보를 저장합니다. OCR을 지원하지 않아 글자가 이미지로만 들어 있는
+            PDF는 등록할 수 없습니다.
+          </p>
           <div className="file-actions">
             <input
-              id="markdown-file"
+              id="document-file"
               type="file"
-              accept=".md,.markdown"
+              accept=".md,.markdown,.pdf"
               disabled={uploading}
               aria-describedby="file-hint"
               onChange={(event) => {
@@ -298,6 +425,7 @@ export function Documents() {
           발생할 수 있습니다. 외부 전송이 허용된 문서만 색인하세요.
         </p>
         {loading && <p role="status">목록을 불러오는 중입니다.</p>}
+        {deleteNotice && <p role="status">{deleteNotice}</p>}
         {listError && <p role="alert">{listError}</p>}
         {!loading && !listError && entries?.length === 0 && (
           <p className="empty">아직 등록된 문서가 없습니다.</p>
@@ -309,6 +437,7 @@ export function Documents() {
                 key={entry.id}
                 entry={entry}
                 onIndexed={markReady}
+                onDeleted={markDeleted}
                 reload={reload}
               />
             ))}

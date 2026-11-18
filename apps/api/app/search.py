@@ -23,6 +23,8 @@ class SearchResult(BaseModel):
     chunk_id: int
     document_id: int
     filename: str
+    # 이전 채팅 스냅샷에는 페이지 필드가 없고 Markdown은 줄 번호만 갖는다.
+    page_number: int | None = None
     start_line: int
     end_line: int
     text: str
@@ -68,7 +70,7 @@ def read_results(db: sqlite3.Connection, ranked_ids: list[int]) -> list[SearchRe
     placeholders = ", ".join("?" for _ in ids)
     # 벡터 저장소는 순위만 제공한다. 출처와 공개 여부는 항상 현재 SQLite 원본으로 확인한다.
     rows = db.execute(
-        f"""SELECT c.id AS chunk_id, c.document_id, d.filename, c.start_line, c.end_line, c.text
+        f"""SELECT c.id AS chunk_id, c.document_id, d.filename, c.page_number, c.start_line, c.end_line, c.text
             FROM chunks AS c JOIN documents AS d ON d.id = c.document_id
             WHERE d.status = 'ready' AND c.id IN ({placeholders})""",
         ids,

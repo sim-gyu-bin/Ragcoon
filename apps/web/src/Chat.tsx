@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { sourceLocation } from './sourceLocation';
 
 const sessionsUrl = '/api/chat/sessions';
 const selectionKey = 'ragcoon.chat.session';
@@ -20,6 +21,7 @@ type Source = {
   document_id: number;
   chunk_id: number;
   filename: string;
+  page_number?: number | null;
   start_line: number;
   end_line: number;
   text: string;
@@ -52,6 +54,10 @@ function isSources(value: unknown): value is Source[] {
         record(s) &&
         Number.isSafeInteger(s.document_id) &&
         Number.isSafeInteger(s.chunk_id) &&
+        (s.page_number == null ||
+          (typeof s.page_number === 'number' &&
+            Number.isSafeInteger(s.page_number) &&
+            s.page_number >= 1)) &&
         Number.isSafeInteger(s.start_line) &&
         Number.isSafeInteger(s.end_line) &&
         typeof s.filename === 'string' &&
@@ -184,7 +190,7 @@ function Answer({ message }: { message: Message }) {
         return (
           <details className="chat-source" key={n} id={sourceId(n)}>
             <summary>
-              [{n}] {s.filename} · {s.start_line}–{s.end_line}줄
+              [{n}] {s.filename} · {sourceLocation(s)}
             </summary>
             <p>
               문서 #{s.document_id} · 청크 #{s.chunk_id}

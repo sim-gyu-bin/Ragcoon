@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { sourceLocation } from './sourceLocation';
 
 const modeLabels = {
   hybrid: '하이브리드 (RRF)',
@@ -11,6 +12,7 @@ type Hit = {
   chunk_id: number;
   document_id: number;
   filename: string;
+  page_number: number | null;
   start_line: number;
   end_line: number;
   text: string;
@@ -141,7 +143,7 @@ export function Search() {
                     </strong>
                     <p>
                       문서 #{hit.document_id} · 청크 #{hit.chunk_id} ·{' '}
-                      {hit.start_line}–{hit.end_line}줄
+                      {sourceLocation(hit)}
                     </p>
                     <pre>{hit.text}</pre>
                   </li>

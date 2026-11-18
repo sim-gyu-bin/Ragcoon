@@ -132,6 +132,20 @@ button:disabled {
 .document-row > * + * {
   margin-top: 0.5rem;
 }
+.delete-confirmation {
+  padding: 0.8rem 1rem;
+  border-left: 3px solid #952c1f;
+  background: #fff6f3;
+  overflow-wrap: anywhere;
+}
+.delete-confirmation > * + * {
+  margin-top: 0.5rem;
+}
+.danger {
+  color: white;
+  background: #952c1f;
+  border-color: #952c1f;
+}
 .search-output,
 .row-heading h3 {
   min-width: 0;

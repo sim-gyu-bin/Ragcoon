@@ -57,28 +57,37 @@ def _embed(client: OpenAI, inputs: list[str]) -> list[list[float]]:
 class VectorStore:
     def __init__(self) -> None:
         self._lock = Lock()
-        self._services: tuple[OpenAI, chromadb.Collection] | None = None
+        self._embedder: OpenAI | None = None
+        self._collection: chromadb.Collection | None = None
 
-    def _clients(self) -> tuple[OpenAI, chromadb.Collection]:
+    def _get_collection(self) -> chromadb.Collection:
+        # 삭제는 로컬 색인만 사용한다. OpenAI 키가 없는 재기동 후에도 정리할 수 있어야 한다.
         with self._lock:
-            if self._services is None:
-                key = os.environ.get("OPENAI_API_KEY")
-                if not key or not key.strip():
-                    raise VectorError("서버에 OpenAI API 키가 설정되지 않았습니다.")
+            if self._collection is None:
                 try:
                     self._chroma = chromadb.PersistentClient(
                         path=os.environ.get("CHROMA_PATH", "./chroma"),
                         settings=Settings(anonymized_telemetry=False),
                     )
-                    collection = self._chroma.get_or_create_collection(
+                    self._collection = self._chroma.get_or_create_collection(
                         name=COLLECTION, embedding_function=None,
                     )
-                    # 타임아웃 뒤에도 과금될 수 있어 SDK가 요청을 자동 재전송하지 않게 한다.
-                    client = OpenAI(api_key=key, timeout=30.0, max_retries=0)
-                    self._services = client, collection
                 except Exception:
-                    raise VectorError("벡터 검색 서비스를 초기화할 수 없습니다.") from None
-            return self._services
+                    raise VectorError("벡터 저장소를 열 수 없습니다.") from None
+            return self._collection
+
+    def _clients(self) -> tuple[OpenAI, chromadb.Collection]:
+        with self._lock:
+            if self._embedder is None:
+                key = os.environ.get("OPENAI_API_KEY")
+                if not key or not key.strip():
+                    raise VectorError("서버에 OpenAI API 키가 설정되지 않았습니다.")
+                try:
+                    # 타임아웃 뒤에도 과금될 수 있어 SDK가 요청을 자동 재전송하지 않게 한다.
+                    self._embedder = OpenAI(api_key=key, timeout=30.0, max_retries=0)
+                except Exception:
+                    raise VectorError("임베딩 서비스를 초기화할 수 없습니다.") from None
+        return self._embedder, self._get_collection()
 
     def upsert(self, document_id: int, chunks: list[tuple[int, str]]) -> None:
         if not chunks:
@@ -95,6 +104,14 @@ class VectorStore:
                 )
             except Exception:
                 raise VectorError("벡터 색인을 저장할 수 없습니다.") from None
+
+    def delete_document(self, document_id: int) -> None:
+        collection = self._get_collection()
+        try:
+            # 부분 색인으로 SQLite 청크 목록과 어긋난 벡터도 문서 ID로 한꺼번에 지운다.
+            collection.delete(where={"document_id": document_id})
+        except Exception:
+            raise VectorError("문서 벡터를 삭제할 수 없습니다.") from None
 
     def search(self, query: str, ready_ids: list[int], limit: int) -> list[int]:
         if not ready_ids or limit <= 0:

@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import chat, documents, search
+from . import chat, deletion, documents, search
 from .chat_model import GroundedChat
 from .vectors import VectorError, VectorStore
 
@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.db_path = os.environ.get("RAGCOON_DB", "ragcoon.sqlite3")
     documents.initialize(app.state.db_path)
     chat.initialize(app.state.db_path)
+    app.state.active_deletions = deletion.ActiveDeletions()
     with ExitStack() as owned:
         if not hasattr(app.state, "vector_store"):
             app.state.vector_store = VectorStore()
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="RAGcoon API", lifespan=lifespan)
 app.include_router(documents.router)
+app.include_router(deletion.router)
 app.include_router(search.router)
 app.include_router(chat.router)
 

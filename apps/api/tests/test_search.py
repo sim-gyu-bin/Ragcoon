@@ -70,7 +70,7 @@ class SearchApiTest(unittest.TestCase):
             self.assertEqual(self.search("* :- (", "sparse"), [])
             self.assertEqual(self.search('OPENAI_API_KEY" NOT ((+*', "sparse"), [{
                 "chunk_id": first["id"], "document_id": doc, "filename": "안내.md",
-                "start_line": 1, "end_line": 2,
+                "page_number": None, "start_line": 1, "end_line": 2,
                 "text": "백업은 OPENAI_API_KEY 항목을 먼저 확인한다.\r\n담당자 확인",
             }])
         self.assertEqual(self.store.mock_calls, [])
