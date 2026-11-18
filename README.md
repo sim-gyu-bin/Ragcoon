@@ -6,9 +6,52 @@ RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent
 
 Markdown·텍스트 PDF를 등록하고, 검색된 문단을 바탕으로 답변을 받아 인용 원문까지 확인할 수 있다. 같은 질문으로 기본 RAG와 한 번 더 검색할 수 있는 Agent의 결과도 비교한다.
 
-**구성:** React·TypeScript 화면과 FastAPI를 Caddy 뒤에서 실행한다. SQLite FTS5와 ChromaDB가 검색을, LangChain과 LangGraph가 답변 생성과 조건부 재검색을 맡는다.
-
 **현재 상태:** 로컬 Docker 환경에서 합성 데이터로 등록·검색·채팅·기록 복원을 검증했다. 실제 OpenAI 모델의 품질 평가와 OCI 배포는 아직 진행하지 않았다.
+
+## 개발 사양
+
+| 영역 | 기술 | 역할 |
+|---|---|---|
+| 프론트엔드 | React, TypeScript, Vite, pnpm | 문서 업로드, 검색 결과, 스트리밍 채팅과 인용 원문 표시 |
+| 백엔드 | Python 3.12, FastAPI, Pydantic, uv | 문서 처리, 요청 검증, 검색·채팅 API |
+| 저장·검색 | SQLite FTS5, ChromaDB | 문서·청크·대화 보관, BM25 희소 검색과 벡터 밀집 검색. 기본값은 두 순위를 합치는 하이브리드(RRF) |
+| 모델 | OpenAI `text-embedding-3-small`, `gpt-4.1-mini` | 문서·질문 임베딩, 검색 근거 기반 답변 생성 |
+| RAG·Agent | LangChain, LangGraph | 모델 연동, 근거 판정과 조건부 재검색 |
+| 평가·관측 | 한국어 합성 평가셋, LangSmith | 기본 RAG와 Agent 비교. 원격 추적은 선택 사항이며 미검증 |
+| 개발·테스트 | Pytest, Vitest, Biome, Husky | 백엔드·프론트 검사, 포맷·린트와 커밋 전 검사 |
+| 실행·배포 | Docker Compose, Caddy | 로컬 컨테이너 실행, 정적 파일 제공과 API 리버스 프록시. OCI·GitHub Actions 배포는 계획 단계 |
+
+## 아키텍처
+
+```mermaid
+flowchart LR
+    Browser[브라우저] --> Caddy
+    Caddy -->|정적 파일| Web[React 빌드]
+    Caddy -->|/api/| API[FastAPI]
+    API --> SQLite[SQLite · 원문과 대화 · FTS5]
+    API --> Chroma[ChromaDB · 벡터 색인]
+    API -->|색인·질문 임베딩·답변 생성| OpenAI[OpenAI API]
+```
+
+SQLite와 ChromaDB는 별도 DB 서버 없이 API 컨테이너에서 사용한다. 두 저장소의 데이터는 같은 Docker 볼륨에 보관해 컨테이너 교체 후에도 유지한다.
+
+## 저장소 구조
+
+```text
+apps/web/             React 화면과 프론트 테스트
+apps/api/app/         FastAPI, 문서·검색·채팅·Agent 구현
+apps/api/evaluation/  평가 질문·정답 근거와 실행기
+apps/api/tests/       백엔드 테스트
+infra/Caddyfile       정적 파일·API 경로 분기
+compose.yaml          로컬 서비스·포트·볼륨
+docs/                 PRD, 작업 플랜, 학습 위키
+```
+
+## 개발 로드맵과 배포 목표
+
+1. **로컬 기반·문서 검색·채팅:** Markdown/PDF 등록부터 세 검색 방식, 인용 답변, 대화 복원까지 구현하고 로컬에서 검증했다.
+2. **Agent·평가:** 조건부 재검색과 오프라인 비교 평가를 구현했다. 실제 OpenAI 모델 품질과 LangSmith 원격 추적은 아직 검증하지 않았다.
+3. **배포·운영:** OCI 오사카 리전의 Ampere A1(ARM64, 2 OCPU, 메모리 12GB, Ubuntu 24.04)을 목표로 한다. Caddy HTTPS, GitHub Actions 배포, 백업·복구는 향후 작업이다. Always Free 적용은 확정되지 않았으며 외부 모델 비용은 별도다.
 
 ## 빠른 시작
 
