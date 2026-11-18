@@ -18,7 +18,7 @@ LINE = re.compile(r"([^\r\n]*)(?:\r\n?|\n|\Z)")
 class Document(BaseModel):
     id: int
     filename: str
-    status: Literal["registered"]
+    status: Literal["registered", "indexing", "failed", "ready"]
     chunk_count: int
 
 
@@ -56,6 +56,11 @@ def initialize(path: str) -> None:
                 text TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS chunks_by_document ON chunks(document_id);
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                text, tokenize = "unicode61 tokenchars '_'"
+            );
+            -- 로컬 API는 단일 워커다. 중단된 작업은 기동 시 유료 재호출하지 않는다.
+            UPDATE documents SET status = 'failed' WHERE status = 'indexing';
         """)
 
 
@@ -140,6 +145,54 @@ def list_documents(request: Request) -> list[Document]:
             FROM documents ORDER BY id DESC
         """)
         return [Document(**row) for row in rows]
+
+
+def claim_index(path: str, document_id: int) -> list[tuple[int, str]] | None:
+    with connection(path) as db:
+        # 조건부 갱신으로 같은 문서를 동시에 전송하지 않는다. 외부 호출 전에 커밋한다.
+        claimed = db.execute(
+            "UPDATE documents SET status = 'indexing' WHERE id = ? AND status IN ('registered', 'failed')",
+            (document_id,),
+        ).rowcount
+        if not claimed:
+            row = db.execute("SELECT status FROM documents WHERE id = ?", (document_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "문서를 찾을 수 없습니다.")
+            if row["status"] == "ready":
+                return None
+            raise HTTPException(409, "이 문서는 이미 색인 중입니다.")
+        return [
+            (row["id"], row["text"])
+            for row in db.execute(
+                "SELECT id, text FROM chunks WHERE document_id = ? ORDER BY id", (document_id,)
+            )
+        ]
+
+
+@router.post("/{document_id}/index")
+def index_document(
+    request: Request, document_id: Annotated[int, Path(ge=1, le=2**63 - 1)]
+) -> dict[str, Literal["ready"]]:
+    path = request.app.state.db_path
+    chunks = claim_index(path, document_id)
+    if chunks is not None:
+        try:
+            request.app.state.vector_store.upsert(document_id, chunks)
+            # 벡터 쓰기 후 FTS와 상태를 함께 커밋해야 실패 문서가 BM25 통계에도 섞이지 않는다.
+            with connection(path) as db:
+                db.execute(
+                    """INSERT OR REPLACE INTO chunks_fts (rowid, text)
+                       SELECT id, text FROM chunks WHERE document_id = ?""",
+                    (document_id,),
+                )
+                db.execute("UPDATE documents SET status = 'ready' WHERE id = ?", (document_id,))
+        except Exception:
+            with connection(path) as db:
+                db.execute("UPDATE documents SET status = 'failed' WHERE id = ?", (document_id,))
+            raise HTTPException(
+                503, "색인을 완료하지 못했습니다. 저장소와 임베딩 설정을 확인한 뒤 다시 시도해 주세요."
+            ) from None
+    return {"status": "ready"}
 
 
 @router.get("/{document_id}/chunks")

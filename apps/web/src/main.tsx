@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Documents } from './Documents';
+import { Search } from './Search';
 import './style.css';
 
 function ConnectionStatus() {
@@ -41,9 +42,10 @@ createRoot(root).render(
     <header>
       <p className="eyebrow">RAGcoon / 로컬 개발</p>
       <h1>문서 보관함</h1>
-      <p>마크다운 문서를 등록하고 줄 단위로 나뉜 원문을 확인하세요.</p>
+      <p>마크다운 문서를 등록하고 색인한 뒤, 질문에 맞는 원문을 찾아보세요.</p>
     </header>
     <Documents />
+    <Search />
     <ConnectionStatus />
   </>,
 );

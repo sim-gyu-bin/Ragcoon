@@ -9,21 +9,18 @@ import {
 type DocumentEntry = {
   id: number;
   filename: string;
-  status: 'registered';
+  status: 'registered' | 'indexing' | 'failed' | 'ready';
   chunk_count: number;
 };
 
 type Chunk = { id: number; start_line: number; end_line: number; text: string };
 
-async function errorDetail(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  const body = await response.json().catch(() => null);
-  return typeof body?.detail === 'string'
-    ? body.detail
-    : `${fallback} (HTTP ${response.status})`;
-}
+const statusLabels: Record<DocumentEntry['status'], string> = {
+  registered: '등록됨 · 색인 전',
+  indexing: '색인 중',
+  failed: '색인 실패 · 검색 불가',
+  ready: '색인 완료 · 검색 가능',
+};
 
 function Chunks({ documentId }: { documentId: number }) {
   const [chunks, setChunks] = useState<Chunk[] | null>(null);
@@ -39,19 +36,16 @@ function Chunks({ documentId }: { documentId: number }) {
           signal: controller.signal,
           cache: 'no-store',
         });
-        if (!response.ok)
-          throw new Error(
-            await errorDetail(response, '구간을 불러오지 못했습니다.'),
-          );
+        if (!response.ok) {
+          if (!controller.signal.aborted)
+            setError(`구간을 불러오지 못했습니다. (HTTP ${response.status})`);
+          return;
+        }
         const rows: Chunk[] = await response.json();
         if (!controller.signal.aborted) setChunks(rows);
-      } catch (cause) {
+      } catch {
         if (!controller.signal.aborted)
-          setError(
-            cause instanceof Error && !(cause instanceof TypeError)
-              ? cause.message
-              : '구간을 불러오지 못했습니다. 서버 연결을 확인해 주세요.',
-          );
+          setError('구간을 불러오지 못했습니다. 서버 연결을 확인해 주세요.');
       }
     }
     void load();
@@ -85,20 +79,78 @@ function Chunks({ documentId }: { documentId: number }) {
   );
 }
 
-function DocumentRow({ entry }: { entry: DocumentEntry }) {
+function DocumentRow({
+  entry,
+  onIndexed,
+  reload,
+}: {
+  entry: DocumentEntry;
+  onIndexed: (id: number) => void;
+  reload: () => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [indexError, setIndexError] = useState('');
+  const status =
+    indexing && entry.status !== 'ready' ? 'indexing' : entry.status;
+
+  async function indexDocument() {
+    if (status !== 'registered' && status !== 'failed') return;
+    setIndexing(true);
+    setIndexError('');
+    try {
+      const response = await fetch(`/api/documents/${entry.id}/index`, {
+        method: 'POST',
+      });
+      if (response.ok && (await response.json()).status === 'ready') {
+        onIndexed(entry.id);
+        return;
+      }
+      setIndexError(
+        response.status === 409
+          ? '다른 요청이 먼저 처리됐습니다. 문서 상태를 확인해 주세요.'
+          : `색인을 완료하지 못했습니다. (HTTP ${response.status})`,
+      );
+    } catch {
+      setIndexError(
+        '색인 결과를 확인하지 못했습니다. 서버 연결을 확인해 주세요.',
+      );
+    } finally {
+      await reload();
+      setIndexing(false);
+    }
+  }
+
   return (
     <li className="document-row">
       <div className="row-heading">
         <h3>{entry.filename}</h3>
-        <span className="badge">등록됨 · 검색 준비 아님</span>
+        <span className="badge" role="status">
+          {statusLabels[status]}
+        </span>
       </div>
       <p>
         문서 #{entry.id} · 구간 {entry.chunk_count}개
       </p>
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? '구간 접기' : '구간 펼쳐보기'}
-      </button>
+      <div className="document-actions">
+        {(status === 'registered' || status === 'failed') && (
+          <button
+            type="button"
+            aria-describedby="index-hint"
+            onClick={() => void indexDocument()}
+          >
+            {status === 'failed' || indexError ? '색인 다시 시도' : '색인 시작'}
+          </button>
+        )}
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? '구간 접기' : '구간 펼쳐보기'}
+        </button>
+      </div>
+      {indexError && status !== 'ready' && <p role="alert">{indexError}</p>}
       {open && <Chunks documentId={entry.id} />}
     </li>
   );
@@ -126,19 +178,16 @@ export function Documents() {
         signal: controller.signal,
         cache: 'no-store',
       });
-      if (!response.ok)
-        throw new Error(
-          await errorDetail(response, '목록을 불러오지 못했습니다.'),
-        );
+      if (!response.ok) {
+        if (!controller.signal.aborted)
+          setListError(`목록을 불러오지 못했습니다. (HTTP ${response.status})`);
+        return;
+      }
       const rows: DocumentEntry[] = await response.json();
       if (!controller.signal.aborted) setEntries(rows);
-    } catch (cause) {
+    } catch {
       if (!controller.signal.aborted)
-        setListError(
-          cause instanceof Error && !(cause instanceof TypeError)
-            ? cause.message
-            : '목록을 불러오지 못했습니다. 서버 연결을 확인해 주세요.',
-        );
+        setListError('목록을 불러오지 못했습니다. 서버 연결을 확인해 주세요.');
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -148,6 +197,16 @@ export function Documents() {
     void reload();
     return () => listRequest.current?.abort();
   }, [reload]);
+
+  function markReady(id: number) {
+    setEntries((previous) =>
+      previous
+        ? previous.map<DocumentEntry>((row) =>
+            row.id === id ? { ...row, status: 'ready' } : row,
+          )
+        : null,
+    );
+  }
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -168,10 +227,10 @@ export function Documents() {
         headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
         body: file,
       });
-      if (!response.ok)
-        throw new Error(
-          await errorDetail(response, '문서를 등록하지 못했습니다.'),
-        );
+      if (!response.ok) {
+        setUploadError(`문서를 등록하지 못했습니다. (HTTP ${response.status})`);
+        return;
+      }
       const entry: DocumentEntry = await response.json();
       setEntries((previous) => [
         entry,
@@ -183,12 +242,8 @@ export function Documents() {
       form.reset();
       setFile(null);
       void reload();
-    } catch (cause) {
-      setUploadError(
-        cause instanceof Error && !(cause instanceof TypeError)
-          ? cause.message
-          : '문서를 등록하지 못했습니다. 서버 연결을 확인해 주세요.',
-      );
+    } catch {
+      setUploadError('문서를 등록하지 못했습니다. 서버 연결을 확인해 주세요.');
     } finally {
       setUploading(false);
     }
@@ -237,6 +292,11 @@ export function Documents() {
           최근 등록한 문서부터 표시합니다. 같은 이름의 파일도 문서 번호로
           구분합니다.
         </p>
+        <p id="index-hint" className="cost-hint">
+          등록만 해서는 OpenAI에 문서를 보내지 않습니다. 색인을 시작하거나
+          재시도하면 서버가 문서 구간의 원문을 OpenAI 임베딩 API로 보내며 비용이
+          발생할 수 있습니다. 외부 전송이 허용된 문서만 색인하세요.
+        </p>
         {loading && <p role="status">목록을 불러오는 중입니다.</p>}
         {listError && <p role="alert">{listError}</p>}
         {!loading && !listError && entries?.length === 0 && (
@@ -245,7 +305,12 @@ export function Documents() {
         {!!entries?.length && (
           <ul className="documents">
             {entries.map((entry) => (
-              <DocumentRow key={entry.id} entry={entry} />
+              <DocumentRow
+                key={entry.id}
+                entry={entry}
+                onIndexed={markReady}
+                reload={reload}
+              />
             ))}
           </ul>
         )}

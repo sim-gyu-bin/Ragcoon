@@ -67,7 +67,13 @@ form label {
   flex-wrap: wrap;
   gap: 0.65rem;
 }
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 input,
+select,
 button {
   font: inherit;
 }
@@ -75,6 +81,22 @@ input[type="file"] {
   flex: 1 1 16rem;
   min-width: 0;
   max-width: 100%;
+}
+input[type="text"],
+select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #8aa193;
+  border-radius: 0.5rem;
+  color: inherit;
+  background: white;
+}
+input[type="text"] {
+  width: 100%;
+}
+.cost-hint {
+  border-left: 3px solid #8aa193;
+  padding: 0.45rem 0.75rem;
+  background: #f3f6f2;
 }
 button,
 input::file-selector-button {
@@ -95,6 +117,7 @@ button:disabled {
   cursor: not-allowed;
 }
 .documents,
+.search-results,
 .chunks {
   list-style: none;
   padding: 0;
@@ -109,9 +132,23 @@ button:disabled {
 .document-row > * + * {
   margin-top: 0.5rem;
 }
+.search-output,
 .row-heading h3 {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.search-output {
+  padding-top: 0.75rem;
+  border-top: 1px solid #d6dfd8;
+}
+.search-output > * + * {
+  margin-top: 0.65rem;
+}
+.search-results li {
+  margin-top: 0.65rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #c1cec6;
+  border-radius: 0.5rem;
 }
 .badge {
   border-radius: 1rem;

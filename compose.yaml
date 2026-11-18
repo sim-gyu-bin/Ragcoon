@@ -4,6 +4,9 @@ services:
     build: ./apps/api
     environment:
       RAGCOON_DB: /data/ragcoon.sqlite3
+      CHROMA_PATH: /data/chroma
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANONYMIZED_TELEMETRY: "False"
     volumes:
       - documents:/data
   caddy:

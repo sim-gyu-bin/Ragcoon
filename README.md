@@ -4,7 +4,7 @@
 
 RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent를 직접 구현하고 실험하는 풀스택 스터디 프로젝트다. 문서와 질문이 주어졌을 때 **어떤 문단이 검색됐고, 답변이 그 문단의 어떤 내용에 근거하는지** 확인할 수 있는 서비스를 만드는 것이 목표다.
 
-**현재 구현 범위: 로컬 연결 화면과 Markdown 등록·원문 확인(L01~L02).** 검색·채팅·OCI 배포는 이후 단계다.
+**현재 구현 범위: 문서 등록과 청크 검색(L01~L03).** 검색은 근거 후보를 반환한다. 답변 생성·Agent·OCI 배포는 이후 단계다.
 
 기능별 인수 기준과 단계별 완료 조건은 [제품 요구사항 문서(PRD)](docs/prd.md)를 참고한다.
 한 단계씩 구현·검증하는 순서와 로컬 완료 후 OCI 배포 절차는 [단계별 작업 플랜](docs/work-plan.md)을 따른다.
@@ -19,7 +19,7 @@ RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent
 - `corepack pnpm format`: 작업 파일의 포맷만 수정한다.
 - 커밋 전에는 추가·수정한 프론트 소스와 설정 JSON의 **스테이징된 내용만** 검사한다. 실패하면 진단을 수정한 뒤 원하는 변경분만 다시 스테이징한다. 훅은 파일이나 Git 인덱스를 수정하지 않는다.
 
-Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compose up -d --build`를 실행하고 [로컬 화면](http://127.0.0.1:18730/)을 연다. 별도 DB 서버나 API 키는 필요 없다.
+Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compose up -d --build`를 실행하고 [로컬 화면](http://127.0.0.1:18730/)을 연다. 별도 DB 서버는 필요 없다. API 키 없이도 등록과 원문 확인은 가능하다.
 
 - **정상:** 브라우저의 React 화면이 같은 주소의 `/api/health`를 요청한다. Caddy가 FastAPI로 전달하고 `{"status":"ok"}`를 받으면 ‘연결 정상’으로 표시한다.
 - **실패 실습:** `docker compose stop api` 후 새로고침한다. Caddy가 정적 화면은 계속 제공하지만 ‘연결 실패’로 바뀐다. `docker compose start api` 후 다시 새로고침하면 복구된다.
@@ -32,6 +32,14 @@ Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compo
 3. 새로고침 후에도 목록이 유지된다. 원문과 청크는 API 컨테이너의 `/data/ragcoon.sqlite3`에 보관하며, Compose의 `documents` 볼륨이 컨테이너보다 오래 유지된다. 자동 만료는 없으므로 실습에는 민감하지 않은 파일을 사용한다.
 
 이 단계의 ‘등록’은 ‘검색 준비 완료’가 아니다. 외부로 본문을 전송하거나 임베딩을 생성하지 않는다. [문서 API](apps/api/app/documents.py)에서 등록한 원문이 어떻게 청크로 나뉘고 SQLite에 보관되는지 살펴볼 수 있다.
+
+### 같은 질문으로 검색 방식 비교
+
+1. 실제 임베딩 실습을 할 때만 서버의 `OPENAI_API_KEY`를 설정한다. 셸 환경 또는 Git이 무시하는 루트 `.env`를 사용하고, 키 값을 코드·채팅·화면에 넣지 않는다. 설정 후 루트에서 `docker compose up -d api`로 적용한다.
+2. 외부 전송 가능한 Markdown을 등록하고 그 문서의 **색인**을 눌러야 청크가 OpenAI로 전송된다. SQLite FTS5와 영구 Chroma 색인이 모두 완료된 문서만 검색에 참여한다. 중간 실패는 준비 완료가 아니며, 재시도하면 임베딩 비용이 다시 발생할 수 있다.
+3. `OPENAI_API_KEY` 같은 식별자(키 값이 아님) 또는 `백업은 언제 해?` 같은 질문으로 검색한다. 기본 **하이브리드**는 BM25와 벡터 순위를 RRF로 합친다. **희소**는 준비된 문서를 로컬에서만 검색하고, **밀집**과 **하이브리드**는 질문 임베딩을 사용할 수 있다. 같은 질문에서 모드만 바꿔 상위 3개 원문·줄 범위를 비교한다. 어떤 모드도 채팅 모델을 호출하지 않는다.
+
+구현 흐름: [검색 화면](apps/web/src/Search.tsx) → [색인 상태·검색 모드·RRF](apps/api/app/search.py) → [OpenAI 임베딩과 Chroma](apps/api/app/vectors.py). API에서 `POST /api/search`에 `{"query":"백업"}`을 보내면 `hybrid`가 기본이고, `mode`에 `sparse` 또는 `dense`를 지정하면 해당 경로만 실행한다.
 
 ## 모델 선택
 
