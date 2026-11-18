@@ -234,3 +234,19 @@ pre {
   border-radius: 0.5rem;
   overflow-wrap: anywhere;
 }
+.compare-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 0.75rem;
+}
+.compare-run {
+  min-width: 0;
+  border: 1px solid #c1cec6;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.compare-run > * + * {
+  display: block;
+  margin-top: 0.5rem;
+}

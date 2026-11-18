@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import chat, deletion, documents, search
+from . import agent, chat, deletion, documents, search
 from .chat_model import GroundedChat
 from .vectors import VectorError, VectorStore
 
@@ -33,6 +33,7 @@ app.include_router(documents.router)
 app.include_router(deletion.router)
 app.include_router(search.router)
 app.include_router(chat.router)
+app.include_router(agent.router)
 
 
 @app.exception_handler(RequestValidationError)
