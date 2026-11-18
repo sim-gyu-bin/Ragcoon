@@ -1,0 +1,4 @@
+#!/bin/sh
+# 키에 고정한 명령만 허용하며 클라이언트가 지정한 명령·서브시스템은 실행하지 않는다.
+[ "$#" = 2 ] && [ "$1" = -c ] && [ "$2" = ragcoon-o03-receive ] && [ -z "${SSH_ORIGINAL_COMMAND:-}" ] && [ -n "${SSH_CONNECTION:-}" ] || exit 1
+exec /usr/bin/sudo -n -- /etc/ragcoon-o03/receiver

@@ -1,0 +1,7 @@
+[Unit]
+Description=Close the temporary RAGcoon window
+
+[Timer]
+OnActiveSec=5min
+AccuracySec=1s
+Unit=ragcoon-o03-restore.service

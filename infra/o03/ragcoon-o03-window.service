@@ -1,0 +1,14 @@
+[Unit]
+Description=RAGcoon bounded HTTPS smoke
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=exec
+ExecStart=/etc/ragcoon-o03/window
+ExecStopPost=/etc/ragcoon-o03/recover
+RuntimeMaxSec=295s
+TimeoutStopSec=180s
+UMask=0077
+StandardOutput=null
+StandardError=null

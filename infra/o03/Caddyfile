@@ -1,0 +1,46 @@
+{
+	admin off
+	persist_config off
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+		timeouts {
+			read_header 5s
+			read_body 10s
+			idle 15s
+		}
+	}
+}
+
+https://{$SMOKE_HOST} {
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	# 정적 파일과 직접 API 모두 같은 임시 암호를 요구한다. 원래 API에는 암호를 전달하지 않는다.
+	route {
+		basic_auth {
+			import /etc/caddy/access.hash
+		}
+		request_header -Authorization
+		request_body {
+			max_size 64KB
+		}
+		@read method GET HEAD
+		@local_get {
+			method GET
+			path /api/health /api/documents /api/documents/*/chunks
+		}
+		@smoke {
+			method POST
+			path /api/documents /api/search
+		}
+		reverse_proxy @local_get api:8000
+		reverse_proxy @smoke api:8000
+		respond /api/* 403
+		root * /srv
+		file_server @read
+		respond 405
+	}
+}

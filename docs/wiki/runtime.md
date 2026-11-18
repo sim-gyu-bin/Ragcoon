@@ -25,6 +25,8 @@ docker compose exec -T api sh -c 'test -n "$OPENAI_API_KEY" && echo "키 설정�
 
 Telegram은 **배포 결과의 통보 수단**이지 성공의 판정자가 아니다. 성공 여부는 승인한 리비전이 실제로 서비스되고 외부 HTTPS·인증 검사가 통과했는지로 결정한다. 메시지가 오지 않았다고 배포를 다시 돌리지 말고 Actions 실행 결과부터 확인한다. 기존 Picksy와 함께 운영할 때 확인할 항목과 단계별 승인 기준은 [OCI 작업 플랜](../work-plan.md#oci--구현량보다-승인공개-범위가-달라지는-지점에서-나눈다)을 따른다.
 
+**O03 공개 시험은 상시 운영이 아니다.** [단회 배포 절차](../../infra/o03/README.md)에 따라 `ragcoon-lab.duckdns.org`에서 최대 5분 동안 임시 Basic 인증으로 화면과 제한된 API를 확인한다. 시험 API에는 O02의 `/data`나 OpenAI 키를 연결하지 않는다. 따라서 업로드·희소 검색은 검증할 수 있지만 실제 임베딩·채팅 검증을 대신하지 않는다. 외부 검사가 끝나면 시험 컨테이너를 내리고 기존 Picksy HTTPS를 복구한다. DNS 이름이 남아 있어도 RAGcoon이 공개 실행 중이라는 뜻은 아니다.
+
 ## DB가 두 개인데 볼륨은 왜 하나일까?
 
 [Compose 설정](../../compose.yaml)의 `documents:/data`는 이름 있는 볼륨 하나를 API 컨테이너의 `/data`에 연결한다. SQLite는 `/data/ragcoon.sqlite3` 파일에 원문·청크·희소 검색 색인·채팅 기록을 보관하고, ChromaDB는 `/data/chroma/` 디렉터리에 청크 ID에 대응하는 벡터와 메타데이터를 보관한다. DB의 역할과 저장 경로는 다르지만 컨테이너 교체 후에도 보존해야 한다는 조건이 같아 볼륨을 공유한다.

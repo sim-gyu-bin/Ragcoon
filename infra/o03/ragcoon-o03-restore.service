@@ -1,0 +1,19 @@
+[Unit]
+Description=Recover interrupted RAGcoon smoke
+After=docker.service ragcoon-o03-window.service
+Requires=docker.service
+Conflicts=ragcoon-o03-window.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/etc/ragcoon-o03/recover
+TimeoutStartSec=180s
+Restart=on-failure
+RestartSec=10s
+UMask=0077
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,228 @@
+#!/usr/bin/python3 -I
+import json
+import os
+import resource
+import secrets
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, '/etc/ragcoon-o03')
+from host import (ETC, PROJECT, RUN, STATE, atomic, cmd, containers, docker, healthy, https, inspect,
+                  label, lock, payload, picksy, ports, private, pull, require, secure, site, sync_dir, until)
+
+JOURNAL = STATE / 'session.json'
+TIMER = PROJECT + '-restore.timer'
+RESTORE = PROJECT + '-restore.service'
+WINDOW = PROJECT + '-window.service'
+RESOURCES = {'volume': [PROJECT + '_smoke_documents'], 'network': [PROJECT + '_public', PROJECT + '_isolated']}
+
+
+def systemctl(*args, timeout=40):
+    cmd('systemctl', *args, timeout=timeout)
+
+
+def resources(kind):
+    return set(docker(kind, 'ls', '--format', '{{.Name}}').splitlines()) & set(RESOURCES[kind])
+
+
+def compose(j, *args):
+    env = {'API_IMAGE': j['api'], 'CADDY_IMAGE': j['caddy'], 'SMOKE_HOST': j['host'], 'COMPOSE_DISABLE_ENV_FILE': '1'}
+    return cmd('docker', 'compose', '--env-file', '/dev/null', '-p', PROJECT, '-f', str(ETC / 'compose.prod.yaml'),
+               *args, extra=env, timeout=65)
+
+
+def mark(name, j):
+    atomic(RUN / name, j['nonce'])
+
+
+def marked(name, j):
+    try:
+        return (RUN / name).read_text() == j['nonce']
+    except FileNotFoundError:
+        return False
+
+
+def receive():
+    signal.alarm(15)
+    cfg, revision = site()
+    msg = payload(sys.stdin.buffer.read(8193), cfg, revision)
+    with lock('receiver.lock', False):
+        require(not JOURNAL.exists())
+        for name in ('access.netrc', 'access.hash'):
+            secure(ETC / name, 0o600)
+        signal.alarm(240)
+        for role in ('api', 'caddy'):
+            pull(msg[role], msg['username'], msg['token'], revision)
+        del msg['username'], msg['token']
+        require(not containers(PROJECT) and not any(resources(k) for k in RESOURCES))
+        private()
+        ids = picksy(cfg)
+        j = {'nonce': secrets.token_hex(16), 'host': cfg['host'], 'picksy_url': cfg['picksy_health_url'],
+             'picksy': ids, 'revision': revision, 'api': msg['api'], 'caddy': msg['caddy'], 'deadline': time.monotonic() + 295}
+        try:
+            # 저널을 먼저 동기화한다. SSH 종료·재부팅 모두 같은 복구 경로를 쓴다.
+            with lock('control.lock'):
+                atomic(JOURNAL, json.dumps(j))
+                systemctl('restart', TIMER)
+                systemctl('is-active', '--quiet', TIMER)
+                systemctl('start', WINDOW)
+            signal.alarm(600)
+            announced = False
+            while not marked('success', j) and not marked('failure', j):
+                if marked('ready', j) and not announced:
+                    print('LOCAL_SMOKE_OK', flush=True)
+                    announced = True
+                time.sleep(0.2)
+            require(marked('success', j))
+            if not announced:
+                print('LOCAL_SMOKE_OK', flush=True)
+        finally:
+            signal.alarm(0)
+            if JOURNAL.exists():
+                restore()
+
+
+def service(role):
+    ids = [cid for cid in containers(PROJECT) if label('container', cid, 'com.docker.compose.service') == role]
+    require(len(ids) == 1)
+    return ids[0]
+
+
+def window():
+    j = json.loads(JOURNAL.read_bytes())
+    cfg, revision = site()
+    require(revision == j['revision'] and cfg['host'] == j['host'] and cfg['picksy_health_url'] == j['picksy_url'])
+    require(all(j[k].partition('@')[0] == cfg[k + '_repository'] for k in ('api', 'caddy')))
+    require(time.monotonic() < j['deadline'])
+    compose(j, 'up', '-d', '--no-build', '--wait', '--wait-timeout', '45', 'api')
+    api = service('api')
+    require(inspect('container', api, '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}') == PROJECT + '_smoke_documents')
+    require(json.loads(inspect('container', api, '{{json .NetworkSettings.Networks}}')).keys() == {PROJECT + '_isolated'})
+    require(inspect('network', PROJECT + '_isolated', '{{.Internal}}') == 'true')
+    cmd('docker', 'exec', '-i', api, '.venv/bin/python', '-', data=(ETC / 'sparse_fixture.py').read_bytes())
+    # 승인 창 직전에 기존 서비스의 경로·상태·ID를 다시 대조한다. 재생성하지 않는다.
+    require(site() == (cfg, revision) and picksy(cfg) == j['picksy'])
+    for cid in reversed(j['picksy']):
+        # stop 요청 직전의 의도까지 영속화해 중간 종료 시 이 창이 건드린 ID만 재기동한다.
+        require(healthy(cid))
+        j.setdefault('stopping', []).append(cid)
+        atomic(JOURNAL, json.dumps(j))
+        docker('stop', '--time', '8', cid)
+    compose(j, 'up', '-d', '--no-build', 'caddy')
+    caddy = service('caddy')
+    require(not any(ports(api).values()))
+    require({p: bs for p, bs in ports(caddy).items() if bs} == {'443/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '443'}]})
+    # 실제 TLS 인증서를 검사한다. 루프백 대상이므로 외부 경로의 증거로 간주하지 않는다.
+    url = 'https://' + j['host']
+    until(lambda: https(url, '/')[0] == 401, 100)
+    require(https(url, '/api/health')[0] == 401)
+    require(https(url, '/api/documents?filename=o03-denied.md', 'POST', b'denied')[0] == 401)
+    require(https(url, '/api/search', 'POST', b'{}')[0] == 401)
+    code, body = https(url, '/', auth=True)
+    require(code == 200 and b'<html' in body.lower())
+    code, body = https(url, '/api/health', auth=True)
+    require(code == 200 and json.loads(body) == {'status': 'ok'})
+    code, body = https(url, '/api/documents?filename=o03-upload.md', 'POST', b'o03uploadproof', True)
+    require(code == 201)
+    doc = json.loads(body)
+    require(doc['status'] == 'registered' and doc['filename'] == 'o03-upload.md' and type(doc['id']) is int)
+    path = '/api/documents/' + str(doc['id'])
+    code, body = https(url, path + '/chunks', auth=True)
+    require(code == 200 and json.loads(body)[0]['text'] == 'o03uploadproof')
+    require(https(url, path + '/index', 'POST', auth=True)[0] == 403)
+    code, body = https(url, '/api/search', 'POST', b'{"mode":"sparse","query":"o03sparseproof"}', True)
+    require(code == 200)
+    result = json.loads(body)
+    require(result['mode'] == 'sparse' and result['results'][0]['filename'] == 'o03-fixture.md'
+            and result['results'][0]['text'] == 'o03sparseproof')
+    private()
+    # Docker 외의 호스트 프로세스가 우회 포트를 게시하는 경우에도 로컬 검사는 실패한다.
+    for line in cmd('ss', '-H', '-ltn').decode().splitlines():
+        addr, port = line.split()[3].rsplit(':', 1)
+        if port in {'80', '8000', '18730', '2019'}:
+            require(addr in {'127.0.0.1', '[::1]'})
+    mark('ready', j)
+    while not marked('external', j):
+        require(time.monotonic() < j['deadline'])
+        time.sleep(0.2)
+    require(time.monotonic() < j['deadline'])
+    mark('completed', j)
+
+
+def external_pass():
+    with lock('recover.lock'):
+        j = json.loads(JOURNAL.read_bytes())
+        require(time.monotonic() < j['deadline'] and marked('ready', j) and not marked('external', j))
+        systemctl('is-active', '--quiet', WINDOW)
+        mark('external', j)
+
+
+def recover():
+    with lock('recover.lock'):
+        if not JOURNAL.exists():
+            return
+        j = json.loads(JOURNAL.read_bytes())
+        # 공개 프록시를 가장 먼저 닫는다. O02·Picksy에는 rm/down을 호출하지 않는다.
+        ids = containers(PROJECT)
+        for cid in sorted(ids, key=lambda c: label('container', c, 'com.docker.compose.service') != 'caddy'):
+            docker('rm', '-f', cid)
+        require(not containers(PROJECT))
+        for name in ('access.netrc', 'access.hash'):
+            (ETC / name).unlink(missing_ok=True)
+        # 기존 compose .env를 다시 읽거나 재생성하지 않는다. 의존 서비스부터 원래 ID로 복구한다.
+        def picksy_restored():
+            for cid in reversed(j['stopping']):
+                if inspect('container', cid, '{{.State.Status}}') in ('created', 'exited'):
+                    docker('start', cid)
+            return all(healthy(cid) for cid in j['picksy']) and https(j['picksy_url'])[0] == 200
+
+        if j.get('stopping'):
+            until(picksy_restored, 100)
+        for kind in RESOURCES:
+            for name in resources(kind):
+                require(label(kind, name, 'com.docker.compose.project') == PROJECT)
+                docker(kind, 'rm', name)
+        passed = os.environ.get('SERVICE_RESULT') == 'success' and marked('completed', j) and marked('external', j)
+        if passed:
+            try:
+                private()
+            except (ValueError, OSError, subprocess.SubprocessError):
+                passed = False
+        systemctl('--no-block', 'stop', TIMER)
+        JOURNAL.unlink()
+        sync_dir(STATE)
+        mark('success' if passed else 'failure', j)
+        for name in ('ready', 'external', 'completed'):
+            (RUN / name).unlink(missing_ok=True)
+
+
+def restore():
+    with lock('control.lock'):
+        systemctl('start', RESTORE, timeout=200)
+        require(not JOURNAL.exists())
+        for name in ('access.netrc', 'access.hash'):
+            (ETC / name).unlink(missing_ok=True)
+
+
+def interrupted(*_):
+    raise InterruptedError()
+
+
+if __name__ == '__main__':
+    try:
+        os.umask(0o077)
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        require(os.geteuid() == 0 and len(sys.argv) == 1)
+        RUN.mkdir(mode=0o700, exist_ok=True)
+        for directory in (RUN, ETC, STATE):
+            secure(directory, 0o700)
+        for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGALRM):
+            signal.signal(sig, interrupted)
+        {'receiver': receive, 'window': window, 'recover': recover, 'restore': restore,
+         'external-pass': external_pass}[Path(sys.argv[0]).name]()
+    except BaseException:
+        # 프로세스 인자·호스트·레지스트리·API 응답·키 내용을 로그에 출력하지 않는다.
+        sys.exit(1)

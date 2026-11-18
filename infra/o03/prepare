@@ -1,0 +1,87 @@
+#!/bin/bash
+set -euo pipefail
+set +x
+umask 077
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C
+unset CDPATH BASH_ENV PYTHONPATH DOCKER_HOST DOCKER_CONTEXT SYSTEMD_BUS_ADDRESS
+[[ $EUID == 0 && $# == 0 ]] || exit 1
+exec 3>&2 >/dev/null 2>&1
+step=prerequisites
+trap 'printf "O03 preparation failed: %s\n" "$step" >&3' ERR
+src=$(cd -- "$(dirname -- "$0")" && pwd -P)
+etc=/etc/ragcoon-o03
+run=/run/ragcoon-o03
+state=/var/lib/ragcoon-o03
+account=ragcoon-o03
+home=/var/lib/ragcoon-o03-ssh
+shell=/usr/local/libexec/ragcoon-o03-ssh
+for tool in python3 flock docker curl systemctl visudo ssh-keygen ss sshd; do command -v "$tool"; done
+[[ $(uname -m) == aarch64 ]]
+# 운영자가 승인 소스에서 전달한 root 소유 staging만 설치 대상으로 사용한다.
+for path in "$src" "$src"/{prepare,host.py,runtime,sparse_fixture.py,ssh-shell,Caddyfile,compose.prod.yaml,ragcoon-o03-{restore.service,restore.timer,window.service}}; do
+    [[ ! -L $path && $(stat -c %u "$path") == 0 && $((8#$(stat -c %a "$path") & 0022)) == 0 ]]
+done
+for path in "$etc" "$run" "$state"; do
+    [[ ! -L $path ]]
+    install -d -o root -g root -m 0700 "$path"
+done
+exec 8>"$run/receiver.lock"
+flock -n 8
+[[ ! -e $state/session.json ]]
+rm -f "$etc/access.netrc" "$etc/access.hash"
+step=settings
+install -o root -g root -m 0600 "$src/host.py" "$etc/host.py"
+# 계약 검사·암호 생성 모두 root의 TTY/로그에 실제 값을 쓰지 않는다.
+source_cidr=$(python3 -IB -c 'import sys; sys.path.insert(0,"/etc/ragcoon-o03"); from host import site; print(site()[0]["ssh_source"])')
+read -r key_type key_data _ < "$etc/deploy.pub"
+[[ $key_type == ssh-ed25519 && $key_data =~ ^[A-Za-z0-9+/]+=*$ && $(wc -l < "$etc/deploy.pub") -eq 1 ]]
+ssh-keygen -l -f "$etc/deploy.pub"
+step=receiver
+install -o root -g root -m 0600 "$src"/{compose.prod.yaml,Caddyfile,sparse_fixture.py} "$etc/"
+install -o root -g root -m 0700 "$src/runtime" "$etc/runtime"
+for op in receiver window recover restore external-pass; do ln -sfn runtime "$etc/$op"; done
+install -d -o root -g root -m 0755 /usr/local/libexec
+install -o root -g root -m 0755 "$src/ssh-shell" "$shell"
+if ! id "$account"; then
+    useradd --system --user-group --home-dir "$home" --no-create-home --shell "$shell" "$account"
+fi
+[[ $(getent passwd "$account" | cut -d: -f6-7) == "$home:$shell" && $(id -Gn "$account") == "$account" ]]
+[[ ! -L $home && ! -L $home/.ssh ]]
+install -d -o root -g root -m 0755 "$home" "$home/.ssh"
+# sshd가 배포 계정 권한으로 읽어야 하므로 공개키만 0644. 홈·키 파일 모두 root만 수정한다.
+printf 'restrict,from="%s",command="ragcoon-o03-receive" %s %s\n' "$source_cidr" "$key_type" "$key_data" > "$run/authorized_keys"
+printf '%s ALL=(root) NOPASSWD: NOLOG_INPUT: NOLOG_OUTPUT: /etc/ragcoon-o03/receiver ""\n' "$account" > "$run/sudoers"
+visudo -cf "$run/sudoers"
+install -o root -g root -m 0440 "$run/sudoers" /etc/sudoers.d/ragcoon-o03
+rm -f "$run/sudoers"
+# 기존 SSH 설정을 변경·reload하지 않는다. 강제 키 외에 로그인 가능한 다른 인증원이 있으면 중단한다.
+[[ $(passwd -S "$account" | awk '{print $2}') == L && ! -e $home/.ssh/authorized_keys2 ]]
+sshd -T -C "user=$account,host=localhost,addr=${source_cidr%/*}" > "$run/effective-ssh"
+for setting in 'pubkeyauthentication yes' 'usepam yes' 'hostbasedauthentication no' 'gssapiauthentication no' 'kbdinteractiveauthentication no' 'authorizedkeyscommand none' 'trustedusercakeys none' 'forcecommand none'; do
+    grep -Fqx "$setting" "$run/effective-ssh"
+done
+grep -Eq '^authorizedkeysfile \.ssh/authorized_keys( \.ssh/authorized_keys2)?$' "$run/effective-ssh"
+rm -f "$run/effective-ssh"
+step=services
+for unit in ragcoon-o03-{restore.service,restore.timer,window.service}; do
+    install -o root -g root -m 0644 "$src/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable ragcoon-o03-restore.service
+step=access
+python3 -IB -W ignore::DeprecationWarning - <<'PY'
+import crypt
+import secrets
+import sys
+sys.path.insert(0, '/etc/ragcoon-o03')
+from host import ETC, atomic, require, site
+cfg, _ = site()
+password = secrets.token_urlsafe(32)
+hashed = crypt.crypt(password, crypt.mksalt(crypt.METHOD_BLOWFISH, rounds=4096))
+require(hashed.startswith(('$2a$', '$2b$', '$2y$')))
+atomic(ETC / 'access.hash', 'smoke ' + hashed + '\n')
+atomic(ETC / 'access.netrc', 'machine ' + cfg['host'] + ' login smoke password ' + password + '\n')
+PY
+install -o root -g root -m 0644 "$run/authorized_keys" "$home/.ssh/authorized_keys"
+rm -f "$run/authorized_keys"
+printf 'O03 prepared (not public)\n' >&3

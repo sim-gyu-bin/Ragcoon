@@ -1,0 +1,53 @@
+name: ragcoon-o03
+services:
+  api:
+    image: ${API_IMAGE:?}
+    platform: linux/arm64
+    pull_policy: never
+    restart: "no"
+    environment:
+      RAGCOON_DB: /data/ragcoon.sqlite3
+      CHROMA_PATH: /data/chroma
+      OPENAI_API_KEY: ""
+      LANGSMITH_TRACING: "false"
+      ANONYMIZED_TELEMETRY: "False"
+    volumes:
+      - smoke_documents:/data
+    networks: [isolated]
+    logging: {driver: none}
+    healthcheck:
+      test: [CMD, python, -c, "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health', timeout=2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+  caddy:
+    image: ${CADDY_IMAGE:?}
+    platform: linux/arm64
+    pull_policy: never
+    restart: "no"
+    environment:
+      SMOKE_HOST: ${SMOKE_HOST:?}
+    ports:
+      - "0.0.0.0:443:443/tcp"
+    networks: [isolated, public]
+    volumes:
+      - /etc/ragcoon-o03/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /etc/ragcoon-o03/access.hash:/etc/caddy/access.hash:ro
+    tmpfs: [/data, /config]
+    logging: {driver: none}
+    depends_on:
+      api: {condition: service_healthy}
+volumes:
+  smoke_documents:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=16m,mode=0700,nodev,nosuid,noexec
+  # O02 소유의 외부 볼륨이다. O03 서비스에는 절대로 마운트하지 않는다.
+  o02_documents:
+    external: true
+    name: ragcoon-private_documents
+networks:
+  isolated: {internal: true}
+  public: {}
