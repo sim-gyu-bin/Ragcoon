@@ -27,6 +27,8 @@ Telegram은 **배포 결과의 통보 수단**이지 성공의 판정자가 아�
 
 **O03 공개 시험은 상시 운영이 아니다.** [단회 배포 절차](../../infra/o03/README.md)에 따라 `ragcoon-lab.duckdns.org`에서 최대 5분 동안 임시 Basic 인증으로 화면과 제한된 API를 확인한다. 시험 API에는 O02의 `/data`나 OpenAI 키를 연결하지 않는다. 따라서 업로드·희소 검색은 검증할 수 있지만 실제 임베딩·채팅 검증을 대신하지 않는다. 외부 검사가 끝나면 시험 컨테이너를 내리고 기존 Picksy HTTPS를 복구한다. DNS 이름이 남아 있어도 RAGcoon이 공개 실행 중이라는 뜻은 아니다.
 
+**사설 배포와 공개 검증은 경로가 다르다.** GitHub Actions는 승인한 `main` 실행에 한해 OIDC로 `tag:ragcoon-ci`를 발급받고, Tailscale을 통해 VM의 SSH에 접속한다. Actions는 고정한 SSH 호스트 키로 VM을 확인하고, VM은 전용 배포 키·승인 SHA·이미지 digest를 확인한다. 반면 외부 시험은 Tailscale이 아니라 공인 DNS와 HTTPS를 사용한다. 이 창에서는 요청 본문 64KB, 격리 DB 16MiB, 유료 모델 호출 0으로 제한하며 **사용자별 초당 요청 수 제한은 구현하지 않았다.** 상시 공개로 바꿀 때는 별도로 정해야 한다.
+
 ## DB가 두 개인데 볼륨은 왜 하나일까?
 
 [Compose 설정](../../compose.yaml)의 `documents:/data`는 이름 있는 볼륨 하나를 API 컨테이너의 `/data`에 연결한다. SQLite는 `/data/ragcoon.sqlite3` 파일에 원문·청크·희소 검색 색인·채팅 기록을 보관하고, ChromaDB는 `/data/chroma/` 디렉터리에 청크 ID에 대응하는 벡터와 메타데이터를 보관한다. DB의 역할과 저장 경로는 다르지만 컨테이너 교체 후에도 보존해야 한다는 조건이 같아 볼륨을 공유한다.
