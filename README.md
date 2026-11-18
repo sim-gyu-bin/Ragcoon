@@ -4,10 +4,18 @@
 
 RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent를 직접 구현하고 실험하는 풀스택 스터디 프로젝트다. 문서와 질문이 주어졌을 때 **어떤 문단이 검색됐고, 답변이 그 문단의 어떤 내용에 근거하는지** 확인할 수 있는 서비스를 만드는 것이 목표다.
 
-**현재 상태: 기획 단계.** 아래 기능과 배포 구성은 개발 계획이며, 아직 실행 가능한 애플리케이션은 없다.
+**현재 구현 범위: 로컬 연결 화면(L01).** 문서 검색·채팅·OCI 배포는 이후 단계다.
 
 기능별 인수 기준과 단계별 완료 조건은 [제품 요구사항 문서(PRD)](docs/prd.md)를 참고한다.
 한 단계씩 구현·검증하는 순서와 로컬 완료 후 OCI 배포 절차는 [단계별 작업 플랜](docs/work-plan.md)을 따른다.
+
+## 로컬 실행
+
+Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compose up -d --build`를 실행하고 [로컬 화면](http://127.0.0.1:18730/)을 연다. DB와 API 키는 필요 없다.
+
+- **정상:** 브라우저의 React 화면이 같은 주소의 `/api/health`를 요청한다. Caddy가 FastAPI로 전달하고 `{"status":"ok"}`를 받으면 ‘연결 정상’으로 표시한다.
+- **실패 실습:** `docker compose stop api` 후 새로고침한다. Caddy가 정적 화면은 계속 제공하지만 ‘연결 실패’로 바뀐다. `docker compose start api` 후 다시 새로고침하면 복구된다.
+- **읽는 순서:** [React 요청](apps/web/src/main.tsx) → [Caddy 경로 분기](infra/Caddyfile) → [FastAPI 응답](apps/api/app/main.py). 실습을 마치면 `docker compose stop`으로 중지한다.
 
 ## 모델 선택
 

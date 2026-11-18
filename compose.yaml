@@ -1,0 +1,12 @@
+name: ragcoon
+services:
+  api:
+    build: ./apps/api
+  caddy:
+    build: ./apps/web
+    ports:
+      - "127.0.0.1:18730:80"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
