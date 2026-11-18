@@ -15,7 +15,13 @@ docker compose up -d api
 docker compose exec -T api sh -c 'test -n "$OPENAI_API_KEY" && echo "키 설정됨" || echo "키 없음"'
 ```
 
-**OCI 운영안(아직 미배포):** 운영 키를 VM의 저장소 밖 파일(예: `/etc/ragcoon/production.env`)에 두고 배포 계정 소유·권한 `600`으로 제한한다. VM의 프로젝트 디렉터리에서 `docker compose --env-file /etc/ragcoon/production.env up -d --build`로 실행한다. 이 방식은 GitHub Actions가 OpenAI 키를 보관할 필요가 없다. 교체 시에는 같은 `--env-file`로 `up -d api`를 실행한다. 새 이미지가 필요한 게 아니라 컨테이너 환경이 바뀌어야 하므로 `restart`만으로는 부족하다. Docker 관리 권한으로는 환경 변수를 볼 수 있다. 설정 전체 출력이나 로그를 공유하지 않는다.
+**OCI 운영안(아직 미배포):** 운영 키는 VM의 저장소 밖 파일(예: `/etc/ragcoon/production.env`)에 두고 배포 계정 소유·권한 `600`으로 제한한다. CI는 운영 키 없이 이미지를 빌드하고 VM은 검증된 digest를 내려받는다. 키 교체 때는 같은 운영 환경 파일을 지정해 API 컨테이너를 다시 생성한다. 이미지 재빌드는 필요 없고 `restart`만으로는 새 값이 반영되지 않는다. Docker 관리 권한으로는 환경 변수를 볼 수 있다. 설정 전체 출력이나 로그를 공유하지 않는다.
+
+## DuckDNS와 Telegram이 보장하지 않는 것
+
+무료 DuckDNS 이름은 **주소를 찾는 수단**이지 인증이나 HTTPS 자체가 아니다. 같은 VM의 같은 IP로 이름 두 개가 해석되어도, 공개 443을 받는 프록시가 호스트명별로 서비스를 구분하고 올바른 인증서를 제공해야 한다. RAGcoon은 여기에 접근 통제까지 필요하다. 화면만 보호하고 `/api/`를 열어 두면 외부에서 모델 비용이 발생하는 요청을 직접 보낼 수 있다.
+
+Telegram은 **배포 결과의 통보 수단**이지 성공의 판정자가 아니다. 성공 여부는 승인한 리비전이 실제로 서비스되고 외부 HTTPS·인증 검사가 통과했는지로 결정한다. 메시지가 오지 않았다고 배포를 다시 돌리지 말고 Actions 실행 결과부터 확인한다. 기존 Picksy와 함께 운영할 때 확인할 항목과 단계별 승인 기준은 [OCI 작업 플랜](../work-plan.md#oci--구현량보다-승인공개-범위가-달라지는-지점에서-나눈다)을 따른다.
 
 ## DB가 두 개인데 볼륨은 왜 하나일까?
 
