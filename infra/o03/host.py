@@ -184,7 +184,8 @@ def ports(cid):
 
 
 def picksy(cfg):
-    ids = containers(cfg['picksy_project'])
+    # 완료된 일회성 마이그레이션은 중지·복구 대상이 아니다.
+    ids = docker('ps', '-q', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + cfg['picksy_project']).split()
     require(len(ids) == 4)
     by_service, deps, owners = {}, {}, set()
     for cid in ids:
@@ -198,8 +199,10 @@ def picksy(cfg):
         for bindings in ports(cid).values():
             if any(b['HostPort'] == '443' for b in bindings or []):
                 owners.add(cid)
+    require(set(by_service) == {'proxy-caddy', 'inference-d1', 'pool-manager', 'api-rust'})
     require(len(owners) == 1 and https(cfg['picksy_health_url'])[0] == 200)
-    return [by_service[s] for s in graphlib.TopologicalSorter(deps).static_order()]
+    active_deps = {s: [d for d in ds if d in by_service] for s, ds in deps.items()}
+    return [by_service[s] for s in graphlib.TopologicalSorter(active_deps).static_order()]
 
 
 def private():
