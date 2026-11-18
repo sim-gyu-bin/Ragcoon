@@ -44,6 +44,8 @@ def sparse_ids(db: sqlite3.Connection, query: str) -> list[int]:
     expression = " OR ".join(
         f'"{term}"*' if re.fullmatch(r"[가-힣]+", term) else f'"{term}"' for term in terms
     )
+    # 희소 검색은 원문에 있는 단어로 후보를 좁힌다. FTS5의 bm25()는 작은 값이
+    # 더 좋은 일치이므로 오름차순이다. 이 경로에서는 질문 임베딩을 만들지 않는다.
     rows = db.execute(
         """SELECT chunks_fts.rowid FROM chunks_fts
            JOIN chunks AS c ON c.id = chunks_fts.rowid
@@ -56,6 +58,9 @@ def sparse_ids(db: sqlite3.Connection, query: str) -> list[int]:
 
 
 def reciprocal_rank_fusion(sparse: list[int], dense: list[int]) -> list[int]:
+    # BM25 점수와 벡터 거리는 척도가 달라 그대로 더하지 않는다. RRF는 각 목록의
+    # 순위만 사용한다. 두 목록에서 모두 2위인 청크는 1/62 + 1/62를 얻어
+    # 한 목록에서만 1위인 청크(1/61)보다 앞선다. 합산 기준은 문서가 아니라 청크 ID다.
     scores: dict[int, float] = {}
     for ranking in (sparse, dense):
         for rank, chunk_id in enumerate(dict.fromkeys(ranking), start=1):

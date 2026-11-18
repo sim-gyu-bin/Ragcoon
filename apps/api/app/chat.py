@@ -137,6 +137,8 @@ class ChatStream(StreamingResponse):
     async def generate(self) -> AsyncIterator[bytes]:
         status: Outcome = "failed"
         try:
+            # 검색 화면과 같은 retrieve()를 쓴다. 검색은 관련 문단을 찾는 데서 끝나지만,
+            # 채팅은 그 문단을 근거로 답변까지 만든다. 후보가 없으면 모델에 추측을 맡기지 않는다.
             results = await run_in_threadpool(retrieve, self.path, self.store, self.body_request)
             if not results:
                 self.parts.append(INSUFFICIENT)
@@ -156,6 +158,8 @@ class ChatStream(StreamingResponse):
                 finally:
                     with CancelScope(shield=True):
                         await reply.aclose()
+                # 스트리밍 조각 하나에는 인용 번호의 절반만 들어올 수도 있다.
+                # 화면에는 즉시 보내되 인용 검사는 답변이 완성된 뒤에 한다.
                 status = outcome("".join(self.parts), len(results))
         except Exception:
             # SDK 예외에는 질문·원문·인증 정보가 들어갈 수 있으므로 전송하거나 기록하지 않는다.

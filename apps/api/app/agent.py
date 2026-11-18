@@ -52,6 +52,8 @@ class _State(TypedDict):
     retried: bool
     sources: list[SearchResult]
     answer: str
+    # 현재 답변과 후보는 새 값으로 교체하지만, steps는 각 노드가 남긴 단계를 이어 붙인다.
+    # 그래서 재검색이 일어나도 비교 화면에서 첫 검색부터의 경로를 볼 수 있다.
     steps: Annotated[list[str], add]
     reason: StopReason | None
 
@@ -105,6 +107,9 @@ def _validate(state: _State) -> dict:
 
 
 def _next(state: _State, runtime: Runtime[_Inputs]) -> str:
+    # 기본 RAG와 Agent는 같은 검색기와 모델을 쓴다. 차이는 근거가 없을 때의 다음 행동이다.
+    # 첫 검색이 비거나 모델이 근거 부족을 알린 경우만 재검색한다. 호출 오류나 잘못된 인용은
+    # 검색어 일치 여부의 문제가 아니다. 재검색 뒤에도 근거가 부족하면 retry_limit으로 끝낸다.
     reason = state["reason"]
     if reason is None:  # 후보가 있으면 실제 답변과 그 인용까지 판정한다.
         return "generate"
@@ -121,6 +126,8 @@ def _retry(state: _State) -> dict:
 
 def _build_graph():
     graph = StateGraph(_State, context_schema=_Inputs)
+    # 노드는 상태에서 필요한 값을 읽고 바뀐 값만 돌려주는 함수다.
+    # 예를 들어 assess는 후보 유무를 기록하고, 다음에 어디로 갈지는 아래의 _next가 정한다.
     graph.add_node("search", _search)
     graph.add_node("assess", _assess)
     graph.add_node("generate", _generate)

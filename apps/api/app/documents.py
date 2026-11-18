@@ -109,6 +109,8 @@ def validate_filename(filename: str) -> None:
 
 
 def split_chunks(source: str) -> Iterator[tuple[int, int, str]]:
+    # 청크는 검색 결과 하나이자 인용할 수 있는 원문 단위다. 빈 줄을 문단 경계로 삼고
+    # 너무 긴 문단만 더 나눈다. 줄 범위를 함께 남겨 나중에 인용이 가리킨 위치를 찾는다.
     start: int | None = None
     end = first_line = last_line = 0
     # UTF-8 서명은 원문에 보관하되 첫 문단의 내용으로 세지 않는다.
@@ -133,6 +135,8 @@ def split_chunks(source: str) -> Iterator[tuple[int, int, str]]:
 
 
 def register(path: str, filename: str, body: bytearray) -> Document:
+    # 등록과 색인은 별개다. 등록은 원문과 청크를 SQLite에 보관하므로 모델 키 없이도
+    # 문단을 펼쳐 볼 수 있다. 검색 대상이 되는 시점은 index_document()가 끝난 뒤다.
     pdf = filename.lower().endswith(".pdf")
     if pdf:
         source, pages = extract_pdf(body)
@@ -241,7 +245,8 @@ def index_document(
     if chunks is not None:
         try:
             request.app.state.vector_store.upsert(document_id, chunks)
-            # 벡터 쓰기 후 FTS와 상태를 함께 커밋해야 실패 문서가 BM25 통계에도 섞이지 않는다.
+            # 두 DB를 한 트랜잭션으로 묶을 수 없어 SQLite의 ready를 검색 허용 기준으로 삼는다.
+            # 벡터 쓰기가 끝난 뒤 FTS와 ready를 함께 커밋해야 부분 색인이 검색·BM25 통계에 섞이지 않는다.
             with connection(path) as db:
                 db.execute(
                     """INSERT OR REPLACE INTO chunks_fts (rowid, text)

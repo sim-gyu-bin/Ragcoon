@@ -96,7 +96,9 @@ class VectorStore:
         for batch in _batches(chunks):
             embeddings = _embed(client, [text for _, text in batch])
             try:
-                # 재시도 시 이전 배치에서 성공한 청크도 SQLite의 같은 ID로 덮어쓴다.
+                # 원문·줄 번호는 SQLite에 남기고 Chroma에는 벡터와 같은 청크 ID를 저장한다.
+                # 예를 들어 Chroma가 "42"를 반환하면 SQLite의 42번 청크가 원문이다.
+                # 고정된 ID로 upsert하므로 배치를 다시 보내도 같은 문단이 둘로 늘지 않는다.
                 collection.upsert(
                     ids=[str(chunk_id) for chunk_id, _ in batch],
                     embeddings=embeddings,
@@ -118,6 +120,8 @@ class VectorStore:
             return []
         _input_size(query)
         client, collection = self._clients()
+        # 문서 벡터는 색인할 때 이미 만들었다. 검색할 때는 질문만 같은 모델로 벡터화해
+        # 두 벡터가 얼마나 가까운지 비교한다. 이 단계에서 답변 문장을 생성하지는 않는다.
         embeddings = _embed(client, [query])
         try:
             # 순위 계산 전에 범위를 좁혀야 부분 색인된 문서가 상위 후보를 밀어내지 않는다.

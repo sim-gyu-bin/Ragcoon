@@ -62,6 +62,8 @@ class GroundedChat:
             return
 
         # 역할은 고정하고 질문과 원문은 JSON 값으로만 전달한다. 과거 대화와 내부 ID는 보내지 않는다.
+        # 예를 들어 SQLite 청크 42가 첫 후보라면 모델에는 42가 아니라 1번으로 보낸다.
+        # 답변의 [1]은 이 요청의 첫 문단을 가리킨다. 다른 답변의 [1]과 같은 출처일 필요는 없다.
         payload = json.dumps({
             "question": query,
             "sources": [{"number": i, "text": row.text} for i, row in enumerate(sources, 1)],
@@ -70,6 +72,8 @@ class GroundedChat:
         saw_stop = False
         try:
             with tracing_context(enabled=False):
+                # LangChain이 맡는 부분은 이 모델 호출이다. system에는 답변 규칙을,
+                # human에는 검색을 마친 질문·근거를 담는다. GPT가 DB를 직접 뒤지지는 않는다.
                 chunks = self._model().astream([("system", _SYSTEM), ("human", payload)])
             try:
                 while True:

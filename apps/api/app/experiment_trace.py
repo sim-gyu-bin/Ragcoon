@@ -32,6 +32,8 @@ def record_synthetic_trace(result: RunResult, mode: str, started_at: datetime) -
     run_id = uuid4()
     with closing(Client(api_url='https://api.smith.langchain.com', api_key=key,
                         auto_batch_tracing=False, omit_traced_runtime_info=True)) as client:
+        # 이 추적은 노드를 실시간으로 감시하는 대신, 실험이 끝나면 전략 하나를 기록 한 건으로 남긴다.
+        # result 전체에는 답변과 원문도 있으므로 그대로 보내지 않고 비교에 필요한 요약만 고른다.
         client.create_run('synthetic-rag-comparison', {'mode': mode, 'strategy': result.strategy},
                           'chain', project_name='ragcoon-synthetic', id=run_id,
                           start_time=started_at, end_time=ended_at, outputs={
