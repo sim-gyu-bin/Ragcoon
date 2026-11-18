@@ -2,6 +2,10 @@ name: ragcoon
 services:
   api:
     build: ./apps/api
+    environment:
+      RAGCOON_DB: /data/ragcoon.sqlite3
+    volumes:
+      - documents:/data
   caddy:
     build: ./apps/web
     ports:
@@ -10,3 +14,6 @@ services:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - api
+
+volumes:
+  documents:

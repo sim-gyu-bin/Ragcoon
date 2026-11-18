@@ -4,18 +4,28 @@
 
 RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent를 직접 구현하고 실험하는 풀스택 스터디 프로젝트다. 문서와 질문이 주어졌을 때 **어떤 문단이 검색됐고, 답변이 그 문단의 어떤 내용에 근거하는지** 확인할 수 있는 서비스를 만드는 것이 목표다.
 
-**현재 구현 범위: 로컬 연결 화면(L01).** 문서 검색·채팅·OCI 배포는 이후 단계다.
+**현재 구현 범위: 로컬 연결 화면과 Markdown 등록·원문 확인(L01~L02).** 검색·채팅·OCI 배포는 이후 단계다.
 
 기능별 인수 기준과 단계별 완료 조건은 [제품 요구사항 문서(PRD)](docs/prd.md)를 참고한다.
 한 단계씩 구현·검증하는 순서와 로컬 완료 후 OCI 배포 절차는 [단계별 작업 플랜](docs/work-plan.md)을 따른다.
 
 ## 로컬 실행
 
-Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compose up -d --build`를 실행하고 [로컬 화면](http://127.0.0.1:18730/)을 연다. DB와 API 키는 필요 없다.
+**처음 편집할 때:** `cd apps/web` 후 `corepack pnpm install --frozen-lockfile`을 실행한다. Corepack이 이 디렉터리의 `package.json`에서 지정한 pnpm 버전을 선택한다. Docker 이미지에 설치된 패키지는 호스트 편집기에 보이지 않으므로 로컬에도 설치한다. 같은 디렉터리에서 `corepack pnpm exec tsc --noEmit`으로 타입을 검사할 수 있다.
+
+Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compose up -d --build`를 실행하고 [로컬 화면](http://127.0.0.1:18730/)을 연다. 별도 DB 서버나 API 키는 필요 없다.
 
 - **정상:** 브라우저의 React 화면이 같은 주소의 `/api/health`를 요청한다. Caddy가 FastAPI로 전달하고 `{"status":"ok"}`를 받으면 ‘연결 정상’으로 표시한다.
 - **실패 실습:** `docker compose stop api` 후 새로고침한다. Caddy가 정적 화면은 계속 제공하지만 ‘연결 실패’로 바뀐다. `docker compose start api` 후 다시 새로고침하면 복구된다.
 - **읽는 순서:** [React 요청](apps/web/src/main.tsx) → [Caddy 경로 분기](infra/Caddyfile) → [FastAPI 응답](apps/api/app/main.py). 실습을 마치면 `docker compose stop`으로 중지한다.
+
+### Markdown 등록 실습
+
+1. 빈 줄로 문단을 구분한 한국어 `.md` 또는 `.markdown` 파일을 선택해 등록한다. UTF-8 텍스트만 허용하며 파일당 최대 1 MiB(1,048,576바이트)다.
+2. 목록에서 문서를 열고 **청크 ID, 원문 줄 번호, 텍스트**를 대조한다. 같은 이름으로 다시 등록하면 기존 문서를 덮어쓰지 않고 별도의 문서 ID가 생긴다.
+3. 새로고침 후에도 목록이 유지된다. 원문과 청크는 API 컨테이너의 `/data/ragcoon.sqlite3`에 보관하며, Compose의 `documents` 볼륨이 컨테이너보다 오래 유지된다. 자동 만료는 없으므로 실습에는 민감하지 않은 파일을 사용한다.
+
+이 단계의 ‘등록’은 ‘검색 준비 완료’가 아니다. 외부로 본문을 전송하거나 임베딩을 생성하지 않는다. [문서 API](apps/api/app/documents.py)에서 등록한 원문이 어떻게 청크로 나뉘고 SQLite에 보관되는지 살펴볼 수 있다.
 
 ## 모델 선택
 
