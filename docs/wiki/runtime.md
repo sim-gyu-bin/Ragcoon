@@ -15,7 +15,7 @@ docker compose up -d api
 docker compose exec -T api sh -c 'test -n "$OPENAI_API_KEY" && echo "키 설정됨" || echo "키 없음"'
 ```
 
-**OCI 운영안(아직 미배포):** 운영 키는 VM의 저장소 밖 파일(예: `/etc/ragcoon/production.env`)에 두고 배포 계정 소유·권한 `600`으로 제한한다. CI는 운영 키 없이 이미지를 빌드하고 VM은 검증된 digest를 내려받는다. 키 교체 때는 같은 운영 환경 파일을 지정해 API 컨테이너를 다시 생성한다. 이미지 재빌드는 필요 없고 `restart`만으로는 새 값이 반영되지 않는다. Docker 관리 권한으로는 환경 변수를 볼 수 있다. 설정 전체 출력이나 로그를 공유하지 않는다.
+**OCI 비공개 실행:** VM 전용 키는 릴리스 소스 밖 `~/ragcoon-private/production.env`에 권한 `600`으로 둔다. 권한이 맞아도 빈 파일일 수 있다. 키 값을 출력하지 않고 컨테이너 안에서 `test -n "$OPENAI_API_KEY"`로 주입 여부를 확인한다. 이 검사는 인증·모델 권한까지 검증하지 않으므로 실제 임베딩 검사는 별도 승인 후 실행한다. 키 교체 때는 같은 `--env-file`로 API 컨테이너를 다시 생성한다. 이미지 재빌드는 필요 없고 `restart`만으로 새 값이 반영되지는 않는다. O02는 VM에서 승인 리비전을 직접 빌드했다. CI 빌드와 GHCR digest 배포는 O03 계획이다.
 
 ## DuckDNS와 Telegram이 보장하지 않는 것
 
