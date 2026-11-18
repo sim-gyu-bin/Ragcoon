@@ -13,6 +13,12 @@ RAGcoon은 RAG(Retrieval-Augmented Generation, 검색 증강 생성)와 AI Agent
 
 **처음 편집할 때:** `cd apps/web` 후 `corepack pnpm install --frozen-lockfile`을 실행한다. Corepack이 이 디렉터리의 `package.json`에서 지정한 pnpm 버전을 선택한다. Docker 이미지에 설치된 패키지는 호스트 편집기에 보이지 않으므로 로컬에도 설치한다. 같은 디렉터리에서 `corepack pnpm exec tsc --noEmit`으로 타입을 검사할 수 있다.
 
+같은 `apps/web`에서 `corepack pnpm hooks:install`을 한 번 실행하면 이 체크아웃에 Husky가 연결된다. Docker 빌드는 Git 훅을 설치하지 않는다. VS Code에서는 권장 확장 **Biome**을 설치하면 프론트 파일을 저장할 때 포맷한다.
+
+- `corepack pnpm check`: Biome 포맷·린트·import 정렬 검사. 타입 검사는 별도다.
+- `corepack pnpm format`: 작업 파일의 포맷만 수정한다.
+- 커밋 전에는 추가·수정한 프론트 소스와 설정 JSON의 **스테이징된 내용만** 검사한다. 실패하면 진단을 수정한 뒤 원하는 변경분만 다시 스테이징한다. 훅은 파일이나 Git 인덱스를 수정하지 않는다.
+
 Docker Compose가 실행되는 환경에서 저장소 루트에서 `docker compose up -d --build`를 실행하고 [로컬 화면](http://127.0.0.1:18730/)을 연다. 별도 DB 서버나 API 키는 필요 없다.
 
 - **정상:** 브라우저의 React 화면이 같은 주소의 `/api/health`를 요청한다. Caddy가 FastAPI로 전달하고 `{"status":"ok"}`를 받으면 ‘연결 정상’으로 표시한다.

@@ -1,0 +1,19 @@
+# 부분 스테이징을 보존하려면 작업 파일이 아닌 Git 인덱스의 내용을 검사해야 한다.
+exec bash -eo pipefail -c '
+  git diff --cached --name-only --no-renames --diff-filter=AM -z -- apps/web |
+  while IFS= read -r -d "" path; do
+    case "$path" in
+      apps/web/src/*.ts|apps/web/src/*.tsx|apps/web/src/*.js|apps/web/src/*.jsx|apps/web/src/*.css|apps/web/src/*.json) ;;
+      apps/web/*/*) continue ;;
+      apps/web/*.json) ;;
+      *) continue ;;
+    esac
+    # --write는 stdin의 수정 제안을 stdout에만 출력한다. 인덱스와 다르면 차단한다.
+    blob=$(git rev-parse ":$path")
+    checked=$(git cat-file blob "$blob" | (cd apps/web && node_modules/.bin/biome check --write --error-on-warnings --stdin-file-path="${path#apps/web/}") | git hash-object --stdin)
+    if [ "$blob" != "$checked" ]; then
+      printf "Biome 수정 필요: %s (apps/web에서 corepack pnpm check로 확인)\n" "$path" >&2
+      exit 1
+    fi
+  done
+'

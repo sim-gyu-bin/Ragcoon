@@ -1,0 +1,7 @@
+{
+  "biome.lsp.bin": "./apps/web/node_modules/@biomejs/biome/bin/biome",
+  "[typescript][typescriptreact][javascript][javascriptreact][css][json]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true
+  }
+}

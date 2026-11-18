@@ -3,7 +3,22 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.30.3",
-  "scripts": { "build": "tsc --noEmit && vite build" },
-  "dependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" },
-  "devDependencies": { "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", "typescript": "~5.9.3", "vite": "^7.3.0" }
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "check": "biome check --error-on-warnings .",
+    "format": "biome format --write .",
+    "hooks:install": "cd ../.. && apps/web/node_modules/.bin/husky"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "husky": "^9.1.7",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0"
+  }
 }
