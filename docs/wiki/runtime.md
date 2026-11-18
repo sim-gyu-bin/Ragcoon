@@ -17,6 +17,18 @@ docker compose exec -T api sh -c 'test -n "$OPENAI_API_KEY" && echo "키 설정�
 
 **OCI 운영안(아직 미배포):** 운영 키를 VM의 저장소 밖 파일(예: `/etc/ragcoon/production.env`)에 두고 배포 계정 소유·권한 `600`으로 제한한다. VM의 프로젝트 디렉터리에서 `docker compose --env-file /etc/ragcoon/production.env up -d --build`로 실행한다. 이 방식은 GitHub Actions가 OpenAI 키를 보관할 필요가 없다. 교체 시에는 같은 `--env-file`로 `up -d api`를 실행한다. 새 이미지가 필요한 게 아니라 컨테이너 환경이 바뀌어야 하므로 `restart`만으로는 부족하다. Docker 관리 권한으로는 환경 변수를 볼 수 있다. 설정 전체 출력이나 로그를 공유하지 않는다.
 
+## DB가 두 개인데 볼륨은 왜 하나일까?
+
+[Compose 설정](../../compose.yaml)의 `documents:/data`는 이름 있는 볼륨 하나를 API 컨테이너의 `/data`에 연결한다. SQLite는 `/data/ragcoon.sqlite3` 파일에 원문·청크·희소 검색 색인·채팅 기록을 보관하고, ChromaDB는 `/data/chroma/` 디렉터리에 청크 ID에 대응하는 벡터와 메타데이터를 보관한다. DB의 역할과 저장 경로는 다르지만 컨테이너 교체 후에도 보존해야 한다는 조건이 같아 볼륨을 공유한다.
+
+`docker compose down`은 이 볼륨을 남기므로 같은 프로젝트로 다시 올리면 두 DB를 다시 사용한다. 반면 **`docker compose down -v`는 볼륨까지 삭제해 두 DB가 함께 사라진다.** 삭제하지 않고 실제 연결만 확인하려면 다음 명령으로 마운트 이름과 경로를 본다.
+
+```sh
+docker inspect --format '{{range .Mounts}}{{println .Name .Destination}}{{end}}' "$(docker compose ps -q api)"
+```
+
+[실제 임베딩 테스트](evaluation.md)는 예외다. `CHROMA_PATH`를 해당 테스트 프로세스에서만 `/data` 밖의 임시 디렉터리로 바꿨고 SQLite 문서 등록은 하지 않았다. 따라서 실제 OpenAI로 벡터화한 합성 문단 3개는 앱 볼륨이나 문서 목록에 들어가지 않았다.
+
 ## 편집기에도 패키지가 필요한 이유
 
 Docker 빌드가 설치한 React 타입은 호스트 편집기에 보이지 않는다. 처음 편집할 때 `apps/web`에서 `corepack pnpm install --frozen-lockfile`과 `corepack pnpm hooks:install`을 실행한다. `corepack pnpm check`는 Biome 검사, `corepack pnpm format`은 포맷, `corepack pnpm exec tsc --noEmit`은 타입 검사다. 커밋 훅은 스테이징한 프론트 변경을 검사할 뿐 자동 수정하지 않는다. 근거: [패키지 스크립트](../../apps/web/package.json), [커밋 훅](../../.husky/pre-commit).
